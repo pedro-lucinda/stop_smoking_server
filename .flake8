@@ -1,0 +1,4 @@
+[flake8]
+# keep your existing settings…
+max-line-length = 100
+extend-ignore =
