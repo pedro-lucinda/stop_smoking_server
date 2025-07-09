@@ -29,7 +29,6 @@ class UserRead(UserBase):
     """
 
     id: int = Field(..., description="Unique identifier of the user")
-    created_at: datetime = Field(..., description="Timestamp when the user was created")
 
     class Config:
         from_attributes = True

@@ -1,28 +1,20 @@
-"""
-SQLAlchemy model for the User.
-"""
-
-from sqlalchemy import TIMESTAMP, Column, Integer, Text, text
-
+from sqlalchemy import Column, Integer, String
+from sqlalchemy.orm import relationship
 from app.db.base import Base
-
+from .preference import Preference
 
 class User(Base):
-    """
-    Database model for users.
-
-    Attributes:
-        id: Primary key.
-        email: Unique user email.
-        password_hash: Bcrypt-hashed password.
-        created_at: Timestamp when the record was created.
-    """
-
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(Text, unique=True, nullable=False, index=True)
-    password_hash = Column(Text, nullable=False)
-    created_at = Column(
-        TIMESTAMP(timezone=True), server_default=text("NOW()"), nullable=False
+    id              = Column(Integer, primary_key=True, index=True)
+    email           = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    name            = Column(String, nullable=True)
+    surname         = Column(String, nullable=True)
+
+    # One-to-one relationship to Preference
+    preference = relationship(
+        "app.models.preference.Preference",
+        back_populates="user",
+        uselist=False,
     )

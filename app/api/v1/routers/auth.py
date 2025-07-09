@@ -42,7 +42,7 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db_session)) -> UserRe
 
     # Hash the password
     hashed = hash_password(user_in.password)
-    user = User(email=user_in.email, password_hash=hashed)
+    user = User(email=user_in.email, hashed_password=hashed)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -59,7 +59,7 @@ def login_json(data: LoginIn, db: Session = Depends(get_db_session)):
     """
     # 1) Look up the user by email
     user = db.query(User).filter(User.email == data.email).first()
-    if not user or not verify_password(data.password, user.password_hash):  # type: ignore[arg-type]
+    if not user or not verify_password(data.password, user.hashed_password):  # type: ignore[arg-type]
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
