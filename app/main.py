@@ -5,7 +5,7 @@ Application factory and startup.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.routers import auth
+from app.api.v1.routers import auth, preference
 from app.core.config import settings
 
 
@@ -35,6 +35,12 @@ def create_app() -> FastAPI:
         auth.router,
         prefix=f"{settings.api_v1_str}/auth",
         tags=["auth"],
+    )
+    
+    app_settings.include_router(
+        preference.router,
+        prefix=f"{settings.api_v1_str}/preference",
+        tags=["preference"]
     )
 
     return app_settings
