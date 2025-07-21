@@ -1,8 +1,8 @@
-"""empty message
+"""initial schema
 
-Revision ID: 0d62193e4471
-Revises: f41b5614eb1e
-Create Date: 2025-07-09 01:48:51.044112
+Revision ID: bc3244c44b54
+Revises: 
+Create Date: 2025-07-19 00:25:45.920680
 
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '0d62193e4471'
-down_revision: Union[str, None] = 'f41b5614eb1e'
+revision: str = 'bc3244c44b54'
+down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -30,6 +30,16 @@ def upgrade() -> None:
     sa.UniqueConstraint('name')
     )
     op.create_index(op.f('ix_badges_id'), 'badges', ['id'], unique=False)
+    op.create_table('users',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('email', sa.String(), nullable=False),
+    sa.Column('hashed_password', sa.String(), nullable=False),
+    sa.Column('name', sa.String(), nullable=True),
+    sa.Column('surname', sa.String(), nullable=True),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
+    op.create_index(op.f('ix_users_id'), 'users', ['id'], unique=False)
     op.create_table('preferences',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
@@ -37,7 +47,6 @@ def upgrade() -> None:
     sa.Column('quit_date', sa.Date(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.CheckConstraint('quit_date <= CURRENT_DATE', name='chk_quit_not_in_future'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('user_id')
@@ -73,6 +82,9 @@ def downgrade() -> None:
     op.drop_table('goals')
     op.drop_index(op.f('ix_preferences_id'), table_name='preferences')
     op.drop_table('preferences')
+    op.drop_index(op.f('ix_users_id'), table_name='users')
+    op.drop_index(op.f('ix_users_email'), table_name='users')
+    op.drop_table('users')
     op.drop_index(op.f('ix_badges_id'), table_name='badges')
     op.drop_table('badges')
     # ### end Alembic commands ###

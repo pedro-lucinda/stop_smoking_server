@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     image: api:latest
     container_name: stop_smoking_api
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --workers 1
     ports:
       - "8000:8000"
     env_file:
@@ -15,6 +15,24 @@ services:
     environment:
       - SQLALCHEMY_DATABASE_URI=postgresql+psycopg2://postgres:example@db:5432/db
       - JWT_SECRET=${JWT_SECRET}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - .:/app:cached
+    depends_on:
+      - db
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: scheduler:latest
+    container_name: stop_smoking_scheduler
+    command: python -m app.tasks.run_scheduler
+    env_file:
+      - .env
+    environment:
+      - SQLALCHEMY_DATABASE_URI=postgresql+psycopg2://postgres:example@db:5432/db
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
       - .:/app:cached
     depends_on:
@@ -33,6 +51,5 @@ services:
     ports:
       - "5432:5432"
 
-  
 volumes:
   db-data:

@@ -18,3 +18,9 @@ class User(Base):
         back_populates="user",
         uselist=False,
     )
+
+    daily_motivations = relationship(
+        "DailyMotivation",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )

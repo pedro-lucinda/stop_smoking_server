@@ -7,6 +7,8 @@ import app.models.preference
 import app.models.goal
 import app.models.badge
 import app.models.association
+import app.models.motivation
+
 from alembic import context
 from app.core.config import settings
 
