@@ -2,6 +2,7 @@ from app.db.session import SessionLocal
 from app.models.preference import Preference
 from app.services.motivation_service import generate_and_save_for_user
 
+
 def generate_and_store_daily_text():
     db = SessionLocal()
     try:

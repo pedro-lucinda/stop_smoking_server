@@ -4,8 +4,8 @@ Base class for all SQLAlchemy ORM models.
 Import this Base in each models module so that
 Alembic can auto-detect table metadata for migrations.
 """
+
 from datetime import datetime
-from sqlalchemy.ext.declarative import as_declarative
 from sqlalchemy import Column, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 

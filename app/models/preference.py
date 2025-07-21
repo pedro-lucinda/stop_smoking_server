@@ -1,10 +1,6 @@
-from sqlalchemy import Column, Integer, Text, Date, ForeignKey, CheckConstraint
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Column, Integer, Text, Date, ForeignKey
 from sqlalchemy.orm import relationship
 from app.db.base import Base, TimestampMixin
-from .association import preference_badges
-from .badge import Badge
-from .goal import Goal
 
 
 class Preference(TimestampMixin, Base):

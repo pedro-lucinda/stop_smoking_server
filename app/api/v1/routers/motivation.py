@@ -14,6 +14,7 @@ router = APIRouter()
 
 openai.api_key = settings.openai_api_key
 
+
 @router.get(
     "/detailed-text",
     response_model=DailyMotivationOut,
@@ -33,5 +34,5 @@ def detailed_text(
     )
     if existing:
         return existing
-    
+
     return generate_and_save_for_user(db, current_user.id)

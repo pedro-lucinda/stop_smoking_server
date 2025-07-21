@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Date, Text, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, Date, Text, ForeignKey
 from app.db.base import TimestampMixin, Base
 from sqlalchemy.orm import relationship
 

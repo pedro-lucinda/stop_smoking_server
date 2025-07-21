@@ -2,12 +2,13 @@ from sqlalchemy import Column, Integer, Text, String
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
+
 class Badge(Base):
     __tablename__ = "badges"
 
-    id          = Column(Integer, primary_key=True, index=True)
-    name        = Column(Text, unique=True, nullable=False)
-    image       = Column(String, nullable=True)
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(Text, unique=True, nullable=False)
+    image = Column(String, nullable=True)
     description = Column(Text, nullable=True)
 
     # Back-reference for Preference.badges
