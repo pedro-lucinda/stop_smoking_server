@@ -2,13 +2,12 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 
-import app.models.user
-import app.models.preference
-import app.models.goal
-import app.models.badge
 import app.models.association
+import app.models.badge
+import app.models.goal
 import app.models.motivation
-
+import app.models.preference
+import app.models.user
 from alembic import context
 from app.core.config import settings
 

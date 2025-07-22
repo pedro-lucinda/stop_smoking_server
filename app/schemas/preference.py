@@ -1,8 +1,7 @@
 from datetime import date, datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, validator
-
+from pydantic import BaseModel, Field
 
 # ---- Goal schemas ----
 
@@ -59,16 +58,11 @@ class BadgeOut(BaseModel):
 class PreferenceBase(BaseModel):
     reason: str = Field(..., example="Protect my health")
     quit_date: date = Field(..., example="2025-07-08")
+    language: Optional[str] = Field(..., example="en-us")
 
 
 class PreferenceCreate(PreferenceBase):
     """Payload for creating a Preference; you can supply a list of initial goals."""
-
-    @validator("quit_date")
-    def quit_date_not_in_past(cls, v: date):
-        if v and v < date.today():
-            raise ValueError("quit_date cannot be in the past")
-        return v
 
     goals: List[GoalCreate] = Field(default_factory=list)
 
@@ -76,16 +70,12 @@ class PreferenceCreate(PreferenceBase):
 class PreferenceUpdate(BaseModel):
     reason: Optional[str] = Field(None, example="Save money for a vacation")
     quit_date: Optional[date] = Field(None, example="2025-08-01")
+    language: Optional[str] = Field(None, example="en-us")
+
     goals: Optional[List[GoalUpdate]] = Field(
         None,
         description="List of goals to add/update; existing goals matched by `id`, new goals when `id` is absent",
     )
-
-    @validator("quit_date")
-    def quit_date_not_in_past(cls, v: date):
-        if v < date.today():
-            raise ValueError("quit_date cannot be in the past")
-        return v
 
     class Config:
         orm_mode = True

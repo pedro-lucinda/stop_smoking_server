@@ -1,14 +1,15 @@
-import re
 import json
-import openai
+import re
 from datetime import date
+
+import openai
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.motivation import DailyMotivation
+from app.models.preference import Preference
 from app.prompts.motivation import get_motivation_prompt
 from app.schemas.motivation import DetailedMotivationOut
-from app.models.preference import Preference
-from app.models.motivation import DailyMotivation
 
 openai.api_key = settings.openai_api_key
 
@@ -48,7 +49,7 @@ def generate_and_save_for_user(db: Session, user_id: int) -> DailyMotivation:
 
     # 4) build & call OpenAI
     prompt = get_motivation_prompt(
-        intro, pref.reason, [g.description for g in pref.goals], days
+        intro, pref.reason, [g.description for g in pref.goals], days, pref.language
     )
     resp = openai.chat.completions.create(
         model="gpt-4o-mini",

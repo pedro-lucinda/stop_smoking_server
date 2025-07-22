@@ -1,6 +1,10 @@
-from sqlalchemy import Column, Integer, Text, Date, ForeignKey
+from sqlalchemy import Column, Date, ForeignKey, Integer, Text
 from sqlalchemy.orm import relationship
+
 from app.db.base import Base, TimestampMixin
+from app.models.association import preference_badges
+from app.models.badge import Badge
+from app.models.goal import Goal
 
 
 class Preference(TimestampMixin, Base):
@@ -12,17 +16,23 @@ class Preference(TimestampMixin, Base):
     )
     reason = Column(Text, nullable=False)
     quit_date = Column(Date, nullable=False)
+    language = Column(Text, nullable=True, default="en-us")
 
-    # Relationships
+    badges = relationship(
+        Badge,
+        secondary=preference_badges,
+        back_populates="preferences",
+        cascade="save-update, merge",
+    )
+
     goals = relationship(
-        "Goal",
+        Goal,
         back_populates="preference",
         cascade="all, delete-orphan",
     )
-    badges = relationship(
-        "Badge",
-        secondary="preference_badges",
-        back_populates="preferences",
-    )
 
-    user = relationship("User", back_populates="preference")
+    user = relationship(
+        "User",
+        back_populates="preference",
+        uselist=False,
+    )

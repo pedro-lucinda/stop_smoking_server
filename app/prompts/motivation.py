@@ -1,5 +1,9 @@
 def get_motivation_prompt(
-    progress_intro: str, reason: str, goal_texts: list[str], days_smoke_free: int
+    progress_intro: str,
+    reason: str,
+    goal_texts: list[str],
+    days_smoke_free: int,
+    language: str,
 ) -> str:
     """
     Build the GPT prompt for daily detailed motivation.
@@ -29,7 +33,7 @@ def get_motivation_prompt(
     # 3) Full prompt
     prompt = f"""
 You are an expert smoking-cessation coach. Produce a JSON object with exactly these keys:
-progress, motivation, cravings, ideas, recommendations.
+progress, motivation, cravings, ideas, recommendations. It should be in the language {language}.
 
 {template}
 
