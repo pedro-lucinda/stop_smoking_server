@@ -1,166 +1,165 @@
 ## 🚀 Project Overview
 
-- **Language & Framework:** Python 3.11, FastAPI  
-- **Database:** PostgreSQL (SQLAlchemy + Alembic)  
-- **Auth:** JWT (Bearer)  
-- **Containerization:** Docker & Docker Compose
+- **Language & Framework:** Python 3.11, FastAPI
+- **Database:** PostgreSQL (SQLAlchemy + Alembic)
+- **Auth:** Auth0 — OAuth2 Authorization Code (PKCE)
+- **Containerization:** Docker & Docker Compose
 
 ---
 
 ## 📦 Prerequisites
 
-- Docker & Docker Compose (v2+)  
-- (Optional) Python 3.11 + virtualenv, if running locally  
+- Docker & Docker Compose (v2+)
+- (Optional) Python 3.11 + virtualenv, if running locally
 
 ---
 
 ## ⚙️ Setup & Running with Docker
 
-1. **Clone the repo**  
+1. **Clone the repo**
+
    ```bash
-   git clone {repo_name}
-   cd {name}
+   git clone {repo_url}
+   cd {repo_dir}
    ```
 
 2. **Configure environment**  
-   Copy `.env.example` → `.env` and fill in secrets:
+   Copy `.env.example` → `.env` and fill in these values:
+
    ```ini
+   # Database & cache
    DATABASE_URL=postgresql+psycopg2://postgres:example@db:5432/db
    REDIS_URL=redis://redis:6379/0
-   JWT_SECRET=your_jwt_secret_here
+
+   # CORS origins (e.g. frontend URL)
    BACKEND_CORS_ORIGINS=["http://localhost:3000"]
+
+   # Auth0 settings
+   AUTH0_DOMAIN=dev-xyz123.auth0.com
+   AUTH0_CLIENT_ID=YourAuth0ClientID
+   AUTH0_CLIENT_SECRET=YourAuth0ClientSecret   # only needed if you use client credentials flow
+   AUTH0_API_AUDIENCE=https://api.myapp.com
+
+   # Scheduler / timezone
+   TIMEZONE=UTC
    ```
 
-3. **Build & start containers**  
+3. **Build & start containers**
+
    ```bash
    docker-compose up --build -d
    ```
 
-4. **Apply migrations**  
+4. **Apply migrations**
+
    ```bash
    docker-compose run --rm api alembic upgrade head
    ```
 
-5. **Check API docs**  
-   Open in your browser:  
+5. **Open API docs**  
+   Visit in your browser:
    ```
    http://localhost:8000/api/v1/docs
    ```
 
 ---
 
+## 🔐 Auth0 Configuration
+
+1. **Create Auth0 API**
+
+   - In **Auth0 Dashboard → APIs → Create API**
+   - **Identifier** = `https://api.myapp.com` (matches `AUTH0_API_AUDIENCE`)
+   - **Signing Algorithm** = RS256
+
+2. **Create Auth0 Application**
+
+   - In **Applications → Create Application**
+   - **Type:** Regular Web App (or Single Page App)
+   - **Allowed Callback URLs:**
+     ```
+     http://localhost:8000/api/v1/docs/oauth2-redirect
+     ```
+   - **Allowed Web Origins:**
+     ```
+     http://localhost:8000
+     ```
+   - **Allowed Logout URLs:**
+     ```
+     http://localhost:8000
+     ```
+   - **Save**, then copy **Client ID** → `AUTH0_CLIENT_ID`
+   - Copy **Client Secret** if you need the credentials (for backend flows)
+
+3. **Enable Scopes**  
+   Make sure the API defines at least these scopes under **Permissions → Scopes → Add Scope**:
+   - `openid`
+   - `profile`
+   - `email`
+
+---
+
 ## 🗂 Alembic Migrations
 
-All schema changes are managed with Alembic.
+- **Create a new revision**
 
-- **Create a new revision**  
   ```bash
   docker-compose run --rm api alembic revision --autogenerate -m "describe change"
   ```
 
-- **Apply migrations**  
+- **Apply migrations**
+
   ```bash
   docker-compose run --rm api alembic upgrade head
   ```
 
-- **Downgrade (rollback) to a specific revision**  
+- **Rollback one step**
+
   ```bash
-  docker-compose run --rm api alembic downgrade <revision_id>
+  docker-compose run --rm api alembic downgrade -1
   ```
 
-- **Reset to zero (empty schema)**  
+- **Reset to base**
   ```bash
   docker-compose run --rm api alembic downgrade base
   ```
 
 ---
 
-## 🧩 Managing Dependencies
+## ⚡️ Using the API
 
-- **Requirements file**  
-  All Python deps are pinned in `requirements.txt`.  
-- **Adding a new dependency**  
-  ```bash
-  pip install <package>
-  pip freeze > requirements.txt
-  ```
-- **Docker rebuild** (after deps change)  
-  ```bash
-  docker-compose up -d --build api
-  ```
+1. **Authorize in Swagger UI**
 
----
+   - Open `/api/v1/docs`
+   - Click **Authorize**
+   - Log in via Auth0 (PKCE flow)
+   - Swagger will store your access token automatically
 
-## 🔧 Running Locally (no Docker)
-
-1. **Create & activate venv**  
-   ```bash
-   python3.11 -m venv .venv
-   source .venv/bin/activate
-   ```
-
-2. **Install deps**  
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Start Postgres & Redis**  
-   Use your local installs or run via Docker:
-   ```bash
-   docker-compose up -d db redis
-   ```
-
-4. **Configure `.env`** (as above) and export:
-   ```bash
-   export $(grep -v '^#' .env | xargs)
-   ```
-
-5. **Run migrations**  
-   ```bash
-   alembic upgrade head
-   ```
-
-6. **Start FastAPI with reload**  
-   ```bash
-   uvicorn app.main:app --reload
-   ```
-
----
-
-## 📚 Usage
-
-1. **Sign up**  
-   `POST /api/v1/auth/signup` with JSON `{ "email": "...", "password": "..." }`
-
-2. **Log in**  
-   `POST /api/v1/auth/login` with JSON `{ "email": "...", "password": "..." }`  
-   → returns `{ "access_token":"…", "token_type":"bearer" }`
-
-3. **Authorize in Swagger UI**  
-   Click **Authorize**, paste `Bearer <access_token>`.
+2. **Call protected endpoints**  
+   All routes under `/api/v1/preference`, `/api/v1/motivation`, `/api/v1/user` are secured.  
+   Swagger will send `Authorization: Bearer <token>` for you.
 
 ---
 
 ## 🛡 Security & Best Practices
 
-- Secrets loaded from `.env` via Pydantic’s `BaseSettings`  
-- JWT tokens with expiration  
-- HTTPS should be enforced in production  
-- Rate‐limit endpoints (e.g. with `slowapi`)  
-- Structured logging + monitoring
+- Secrets loaded from `.env` via Pydantic’s `BaseSettings`
+- OAuth2 tokens with expiry and RS256 verification against Auth0’s JWKS
+- Enforce HTTPS in production
+- Rate‑limit endpoints (e.g. with `slowapi`)
+- Structured logging & monitoring
 
 ---
 
-## 📦 Dockerfile & Compose Highlights
+## 🐳 Dockerfile & Compose Highlights
 
-- **Dockerfile**  
-  - Python 3.11-slim base  
-  - `requirements.txt` layer caching  
-  - `uvicorn --reload` for dev
+- **Dockerfile**
 
-- **docker-compose.yml**  
-  - Services: `api`, `db` (Postgres), `redis`  
-  - Named volume for Postgres data  
-  - `.env` mounted into `api`
+  - Python 3.11‑slim base
+  - Leverages layer caching for `requirements.txt`
+  - Uses `uvicorn --reload` for development
 
----
+- **docker-compose.yml**
+  - Services: `api`, `db` (Postgres), `redis`
+  - Named volume for Postgres data
+  - `.env` injected into the `api` service
