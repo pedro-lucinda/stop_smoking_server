@@ -20,11 +20,6 @@ class Settings(BaseSettings):
     app_name: str = "API"
     api_v1_str: str = "/api/v1"
 
-    # JWT
-    secret_key: str = os.getenv("JWT_SECRET", "supersecretkey")
-    algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60
-
     # PostgreSQL
     postgres_server: str = os.getenv("POSTGRES_SERVER", "db")
     postgres_user: str = os.getenv("POSTGRES_USER", "postgres")
@@ -34,6 +29,11 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+    # Auth0
+    auth0_domain: str = os.getenv("AUTH0_DOMAIN", "")
+    auth0_api_audience: str = os.getenv("AUTH0_API_AUDIENCE", "ss_api")
+    auth0_client_id: str = os.getenv("AUTH0_CLIENT_ID")
 
     # CORS: comma-separated list in your .env
     backends_cors_origins: List[str] = Field(

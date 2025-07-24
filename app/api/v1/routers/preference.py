@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 from datetime import date
 from typing import List
 
-from app.api.v1.dependencies import get_db_session, get_current_user
+from app.api.v1.dependencies.db import get_db_session
+from app.api.v1.dependencies.auth0 import get_current_user
 from app.models.preference import Preference
 from app.models.goal import Goal
 from app.schemas.preference import PreferenceCreate, PreferenceOut, PreferenceUpdate

@@ -28,7 +28,7 @@ class GoalUpdate(BaseModel):
     is_completed: Optional[bool] = Field(None, example=True)
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class GoalOut(GoalBase):
@@ -36,7 +36,7 @@ class GoalOut(GoalBase):
     preference_id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # ---- Badge schemas (read-only) ----
@@ -49,7 +49,7 @@ class BadgeOut(BaseModel):
     description: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # ---- Preference schemas ----
@@ -78,7 +78,7 @@ class PreferenceUpdate(BaseModel):
     )
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class PreferenceOut(PreferenceBase):
@@ -89,4 +89,4 @@ class PreferenceOut(PreferenceBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True

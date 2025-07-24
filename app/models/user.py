@@ -7,18 +7,17 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
+    auth0_id = Column(String, unique=True, index=True, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
     name = Column(String, nullable=True)
     surname = Column(String, nullable=True)
+    img = Column(String, nullable=True)
 
-    # One-to-one relationship to Preference
     preference = relationship(
         "app.models.preference.Preference",
         back_populates="user",
         uselist=False,
     )
-
     daily_motivations = relationship(
         "DailyMotivation", back_populates="user", cascade="all, delete-orphan"
     )

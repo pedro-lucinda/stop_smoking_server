@@ -11,7 +11,7 @@ class DetailedMotivationOut(BaseModel):
     recommendations: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class DailyMotivationCreate(BaseModel):
@@ -30,4 +30,4 @@ class DailyMotivationOut(DailyMotivationCreate):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True

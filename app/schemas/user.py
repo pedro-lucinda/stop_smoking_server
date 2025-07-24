@@ -1,32 +1,24 @@
-"""
-Pydantic schemas for user operations.
-"""
-
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr
+from typing import Optional
 
 
-class UserBase(BaseModel):
-    """
-    Shared properties of a user.
-    """
-
-    email: EmailStr = Field(..., description="Unique user email address")
-
-
-class UserCreate(UserBase):
-    """
-    Properties required to create a new user.
-    """
-
-    password: str = Field(..., description="Plain-text password")
-
-
-class UserRead(UserBase):
-    """
-    Properties returned when reading a user.
-    """
-
-    id: int = Field(..., description="Unique identifier of the user")
+class UserOut(BaseModel):
+    id: int
+    auth0_id: str
+    email: EmailStr
+    name: Optional[str]
+    surname: Optional[str]
+    img: Optional[str]
 
     class Config:
-        from_attributes = True
+        orm_mode = True
+
+
+class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    name: Optional[str] = None
+    surname: Optional[str] = None
+    img: Optional[str] = None
+
+    class Config:
+        orm_mode = True

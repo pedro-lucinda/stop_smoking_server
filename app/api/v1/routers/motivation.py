@@ -5,7 +5,9 @@ from sqlalchemy.orm import Session
 import openai
 
 from app.core.config import settings
-from app.api.v1.dependencies import get_db_session, get_current_user
+from app.api.v1.dependencies.db import get_db_session
+from app.api.v1.dependencies.auth0 import get_current_user
+
 from app.models.motivation import DailyMotivation
 from app.schemas.motivation import DailyMotivationOut
 from app.services.motivation_service import generate_and_save_for_user
