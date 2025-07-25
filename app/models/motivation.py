@@ -1,6 +1,6 @@
-from sqlalchemy import Column, Integer, Date, Text, ForeignKey
-from app.db.base import TimestampMixin, Base
+from sqlalchemy import Column, Integer, Date, ForeignKey, Text
 from sqlalchemy.orm import relationship
+from app.db.base import TimestampMixin, Base
 
 
 class DailyMotivation(TimestampMixin, Base):
@@ -11,6 +11,7 @@ class DailyMotivation(TimestampMixin, Base):
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     date = Column(Date, nullable=False, index=True)
+
     progress = Column(Text, nullable=False)
     motivation = Column(Text, nullable=False)
     cravings = Column(Text, nullable=False)

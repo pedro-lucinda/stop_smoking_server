@@ -57,7 +57,7 @@ def generate_and_save_for_user(db: Session, user_id: int) -> DailyMotivation:
             {"role": "system", "content": "You are a caring, evidence-based coach."},
             {"role": "user", "content": prompt},
         ],
-        max_tokens=700,
+        max_tokens=2000,
         temperature=0.7,
     )
     raw = resp.choices[0].message.content.strip()

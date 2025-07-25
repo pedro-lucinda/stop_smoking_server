@@ -45,14 +45,14 @@ progress, motivation, cravings, ideas, recommendations. It should be in the lang
 2. motivation: A heartfelt, personalized encouragement based on the user's reason (“{reason}”)
    and goals ({', '.join(goal_texts)}). Cite at least *two* recent psychology studies
    or expert articles (e.g. 'Zheng et al., Journal of Smoking Cessation, Nov 2024',
-   'PsychHealth May 2025').
+   'PsychHealth May 2025'). Make it long.
 
 3. cravings: Practical strategies to handle cravings, **including at least two mindfulness techniques**
    (e.g. mindful breathing, body scan).
 
-4. ideas: Creative activities or habit-replacements to keep momentum, with a brief rationale.
+4. ideas: Creative activities or habit-replacements to keep momentum, with a brief rationale. Make it long.
 
-5. recommendations: Other evidence-based tips—*do NOT* suggest using any external apps.
+5. recommendations: Other evidence-based tips—*do NOT* suggest using any external apps. Make it long.
 
 Return only valid JSON—no extra explanation or text.
 """
