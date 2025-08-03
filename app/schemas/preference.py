@@ -59,6 +59,9 @@ class PreferenceBase(BaseModel):
     reason: str = Field(..., example="Protect my health")
     quit_date: date = Field(..., example="2025-07-08")
     language: Optional[str] = Field(..., example="en-us")
+    cig_per_day: Optional[int] = Field(0, example=10)
+    years_smoking: Optional[int] = Field(0, example=5)
+    cig_price: Optional[float] = Field(0.0, example=5.0, description="Price per cigarette in local currency")
 
 
 class PreferenceCreate(PreferenceBase):
@@ -71,6 +74,9 @@ class PreferenceUpdate(BaseModel):
     reason: Optional[str] = Field(None, example="Save money for a vacation")
     quit_date: Optional[date] = Field(None, example="2025-08-01")
     language: Optional[str] = Field(None, example="en-us")
+    cig_per_day: Optional[int] = Field(None, example=5)
+    years_smoking: Optional[int] = Field(None, example=3)
+    cig_price: Optional[float] = Field(None, example=4.5, description="Price per cigarette in local currency")
 
     goals: Optional[List[GoalUpdate]] = Field(
         None,
@@ -87,6 +93,7 @@ class PreferenceOut(PreferenceBase):
     badges: List[BadgeOut] = []
     created_at: datetime
     updated_at: datetime
+
 
     class Config:
         from_attributes = True

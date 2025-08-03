@@ -17,6 +17,11 @@ class Preference(TimestampMixin, Base):
     reason = Column(Text, nullable=False)
     quit_date = Column(Date, nullable=False)
     language = Column(Text, nullable=True, default="en-us")
+    cig_per_day = Column(Integer, nullable=True, default=0)
+    years_smoking = Column(Integer, nullable=True, default=0)
+    cig_price = Column(
+        Integer, nullable=True, default=0, comment="Price per cigarette in local currency"
+    )
 
     badges = relationship(
         Badge,
