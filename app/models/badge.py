@@ -17,3 +17,9 @@ class Badge(Base):
         secondary="preference_badges",
         back_populates="badges",
     )
+
+    user = relationship(
+        "User",
+        back_populates="badges",
+        cascade="all, delete-orphan",
+    )

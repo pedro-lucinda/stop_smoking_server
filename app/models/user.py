@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String
 from sqlalchemy.orm import relationship
+
 from app.db.base import Base
 
 
@@ -20,4 +21,14 @@ class User(Base):
     )
     daily_motivations = relationship(
         "DailyMotivation", back_populates="user", cascade="all, delete-orphan"
+    )
+    cravings = relationship(
+        "Craving", back_populates="user", cascade="all, delete-orphan"
+    )
+    diaries = relationship("Diary", back_populates="user", cascade="all, delete-orphan")
+
+    badges = relationship(
+        "Badge",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
