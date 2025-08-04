@@ -1,19 +1,23 @@
-import requests
+import os
 from typing import Dict
 
-from fastapi import Depends, HTTPException, status, Security
+import httpx
+import requests
+from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import OAuth2AuthorizationCodeBearer
 from jose import jwt
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies.db import get_db_session
-from app.models.user import User
 from app.core.config import settings
+from app.models.user import User
 
 # Auth0 configuration
 auth0_domain = settings.auth0_domain
 api_audience = settings.auth0_api_audience
 algorithms = ["RS256"]
+client_id = settings.auth0_mgmt_client_id
+client_secret = settings.auth0_mgmt_client_secret
 
 # OAuth2 scheme for Swagger UI & header parsing
 oauth2_scheme = OAuth2AuthorizationCodeBearer(
@@ -134,3 +138,43 @@ def get_current_user(
         db.refresh(user)
 
     return user
+
+
+def get_m2m_token() -> str:
+    resp = httpx.post(
+        f"https://{auth0_domain}/oauth/token",
+        json={
+            "grant_type": "client_credentials",
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "audience": f"https://{auth0_domain}/api/v2/",
+        },
+    )
+    resp.raise_for_status()
+    return resp.json()["access_token"]
+
+
+def update_user_email(auth0_id: str, new_email: str):
+    token = get_m2m_token()
+    url = f"https://{auth0_domain}/api/v2/users/{auth0_id}"
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = {
+        "email": new_email,
+        "email_verified": False,  # force re-verify
+        "verify_email": True,  # trigger the confirmation email
+    }
+    r = httpx.patch(url, json=payload, headers=headers)
+    r.raise_for_status()
+    return r.json()
+
+
+def can_update_email(auth0_id: str) -> bool:
+    token = get_m2m_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    # Only fetch the identities field
+    url = f"https://{auth0_domain}/api/v2/users/{auth0_id}?fields=identities"
+    r = httpx.get(url, headers=headers, timeout=5.0)
+    r.raise_for_status()
+    identities = r.json().get("identities", [])
+    # “auth0” provider == native database user
+    return any(idf.get("provider") == "auth0" for idf in identities)

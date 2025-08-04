@@ -129,3 +129,30 @@ def update_diary_entry(
     db.refresh(diary)
 
     return DiaryOut.from_orm(diary)
+
+@router.delete("/{diary_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_diary_entry(
+    diary_id: int,
+    db: Session = Depends(get_db_session),
+    current_user=Depends(get_current_user),
+):
+    """
+    Delete a diary entry.
+
+    This endpoint allows the authenticated user to delete a specific diary entry by its ID.
+
+    Args:
+        diary_id (int): The ID of the diary entry to delete.
+    Raises:
+        HTTPException: If the diary entry does not exist or does not belong to the current user
+    """
+    diary = next((d for d in current_user.diaries if d.id == diary_id), None)
+    if not diary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Diary entry not found",
+        )
+
+    db.delete(diary)
+    db.commit()
+    return {"message": "Diary entry deleted successfully"}

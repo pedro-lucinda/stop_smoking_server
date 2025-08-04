@@ -1,9 +1,9 @@
 import os
 from pathlib import Path
+from typing import Any, List
 
 from dotenv import load_dotenv
 from pydantic.v1 import BaseSettings, Field
-from typing import List, Any
 
 # BASE_DIR is one level above app/
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     auth0_domain: str = os.getenv("AUTH0_DOMAIN", "")
     auth0_api_audience: str = os.getenv("AUTH0_API_AUDIENCE", "ss_api")
     auth0_client_id: str = os.getenv("AUTH0_CLIENT_ID")
+    auth0_mgmt_client_id: str = os.getenv("AUTH0_MGMT_CLIENT_ID", "")
+    auth0_mgmt_client_secret: str = os.getenv("AUTH0_MGMT_CLIENT_SECRET", "")
+    auth0_mgmt_audience: str = os.getenv("AUTH0_MGMT_AUDIENCE", "")
 
     # CORS: comma-separated list in your .env
     backends_cors_origins: List[str] = Field(
