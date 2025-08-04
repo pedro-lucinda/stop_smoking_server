@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.routers import health, motivation, preference, user
+from app.api.v1.routers import health, motivation, preference, user, diary
 from app.core.config import settings
 from app.core.openapi import custom_openapi
 from app.core.scheduler import init_scheduler
@@ -53,6 +53,11 @@ def create_app() -> FastAPI:
         health.router,
         prefix=f"{settings.api_v1_str}/health",
         tags=["health"],
+    )
+    app.include_router(
+        diary.router,
+        prefix=f"{settings.api_v1_str}/diary",
+        tags=["diary"],
     )
 
     # Scheduler
