@@ -2,6 +2,11 @@ from sqlalchemy import Column, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
+from app.models.badge import Badge
+from app.models.craving import Craving
+from app.models.diary import Diary
+from app.models.motivation import DailyMotivation
+from app.models.preference import Preference
 
 
 class User(Base):
@@ -15,17 +20,17 @@ class User(Base):
     img = Column(String, nullable=True)
 
     preference = relationship(
-        "app.models.preference.Preference",
+        Preference,
         back_populates="user",
         uselist=False,
     )
     daily_motivations = relationship(
-        "DailyMotivation", back_populates="user", cascade="all, delete-orphan"
+        DailyMotivation, back_populates="user", cascade="all, delete-orphan"
     )
     cravings = relationship(
-        "Craving", back_populates="user", cascade="all, delete-orphan"
+        Craving, back_populates="user", cascade="all, delete-orphan"
     )
-    diaries = relationship("Diary", back_populates="user", cascade="all, delete-orphan")
+    diaries = relationship(Diary, back_populates="user", cascade="all, delete-orphan")
 
     badges = relationship(
         "Badge",

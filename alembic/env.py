@@ -4,6 +4,8 @@ from sqlalchemy import engine_from_config, pool
 
 import app.models.association
 import app.models.badge
+import app.models.craving
+import app.models.diary
 import app.models.goal
 import app.models.motivation
 import app.models.preference
