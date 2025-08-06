@@ -2,7 +2,7 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 
-import app.models.association
+import app.models.user_badge
 import app.models.badge
 import app.models.craving
 import app.models.diary

@@ -1,18 +1,18 @@
 """initial schema
 
-Revision ID: 47a57407fa2a
+Revision ID: c9d3114d5ef7
 Revises: 
-Create Date: 2025-07-24 23:44:01.573155
+Create Date: 2025-08-06 17:14:21.130566
 
 """
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
+
 
 # revision identifiers, used by Alembic.
-revision: str = '47a57407fa2a'
+revision: str = 'c9d3114d5ef7'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -42,15 +42,33 @@ def upgrade() -> None:
     op.create_index(op.f('ix_users_auth0_id'), 'users', ['auth0_id'], unique=True)
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
     op.create_index(op.f('ix_users_id'), 'users', ['id'], unique=False)
+    op.create_table('cravings',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('date', sa.Date(), nullable=False),
+    sa.Column('comments', sa.Text(), nullable=False),
+    sa.Column('have_smoked', sa.Boolean(), nullable=False),
+    sa.Column('desire_range', sa.Integer(), nullable=True),
+    sa.Column('number_of_cigarets_smoked', sa.Integer(), nullable=True),
+    sa.Column('feeling', sa.Text(), nullable=True),
+    sa.Column('activity', sa.Text(), nullable=True),
+    sa.Column('company', sa.Text(), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_cravings_date'), 'cravings', ['date'], unique=False)
+    op.create_index(op.f('ix_cravings_id'), 'cravings', ['id'], unique=False)
     op.create_table('daily_motivations',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('date', sa.Date(), nullable=False),
-    sa.Column('progress', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+    sa.Column('progress', sa.Text(), nullable=False),
     sa.Column('motivation', sa.Text(), nullable=False),
-    sa.Column('cravings', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-    sa.Column('ideas', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-    sa.Column('recommendations', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+    sa.Column('cravings', sa.Text(), nullable=False),
+    sa.Column('ideas', sa.Text(), nullable=False),
+    sa.Column('recommendations', sa.Text(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
@@ -58,12 +76,31 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_daily_motivations_date'), 'daily_motivations', ['date'], unique=False)
     op.create_index(op.f('ix_daily_motivations_id'), 'daily_motivations', ['id'], unique=False)
+    op.create_table('diaries',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('date', sa.Date(), nullable=False),
+    sa.Column('notes', sa.Text(), nullable=False),
+    sa.Column('have_smoked', sa.Boolean(), nullable=False),
+    sa.Column('craving_range', sa.Integer(), nullable=True),
+    sa.Column('number_of_cravings', sa.Integer(), nullable=True),
+    sa.Column('number_of_cigarets_smoked', sa.Integer(), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_diaries_date'), 'diaries', ['date'], unique=False)
+    op.create_index(op.f('ix_diaries_id'), 'diaries', ['id'], unique=False)
     op.create_table('preferences',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('reason', sa.Text(), nullable=False),
     sa.Column('quit_date', sa.Date(), nullable=False),
     sa.Column('language', sa.Text(), nullable=True),
+    sa.Column('cig_per_day', sa.Integer(), nullable=True),
+    sa.Column('years_smoking', sa.Integer(), nullable=True),
+    sa.Column('cig_price', sa.Integer(), nullable=True, comment='Price per cigarette in local currency'),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
@@ -71,6 +108,13 @@ def upgrade() -> None:
     sa.UniqueConstraint('user_id')
     )
     op.create_index(op.f('ix_preferences_id'), 'preferences', ['id'], unique=False)
+    op.create_table('user_badges',
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('badge_id', sa.Integer(), nullable=False),
+    sa.ForeignKeyConstraint(['badge_id'], ['badges.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('user_id', 'badge_id')
+    )
     op.create_table('goals',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('preference_id', sa.Integer(), nullable=False),
@@ -82,28 +126,26 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_goals_id'), 'goals', ['id'], unique=False)
-    op.create_table('preference_badges',
-    sa.Column('preference_id', sa.Integer(), nullable=False),
-    sa.Column('badge_id', sa.Integer(), nullable=False),
-    sa.Column('awarded_at', sa.DateTime(), nullable=False),
-    sa.ForeignKeyConstraint(['badge_id'], ['badges.id'], ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['preference_id'], ['preferences.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('preference_id', 'badge_id')
-    )
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     """Downgrade schema."""
     # ### commands auto generated by Alembic - please adjust! ###
-    op.drop_table('preference_badges')
     op.drop_index(op.f('ix_goals_id'), table_name='goals')
     op.drop_table('goals')
+    op.drop_table('user_badges')
     op.drop_index(op.f('ix_preferences_id'), table_name='preferences')
     op.drop_table('preferences')
+    op.drop_index(op.f('ix_diaries_id'), table_name='diaries')
+    op.drop_index(op.f('ix_diaries_date'), table_name='diaries')
+    op.drop_table('diaries')
     op.drop_index(op.f('ix_daily_motivations_id'), table_name='daily_motivations')
     op.drop_index(op.f('ix_daily_motivations_date'), table_name='daily_motivations')
     op.drop_table('daily_motivations')
+    op.drop_index(op.f('ix_cravings_id'), table_name='cravings')
+    op.drop_index(op.f('ix_cravings_date'), table_name='cravings')
+    op.drop_table('cravings')
     op.drop_index(op.f('ix_users_id'), table_name='users')
     op.drop_index(op.f('ix_users_email'), table_name='users')
     op.drop_index(op.f('ix_users_auth0_id'), table_name='users')

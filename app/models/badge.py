@@ -1,24 +1,27 @@
-from sqlalchemy import Column, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, Integer, String, Text
 from sqlalchemy.orm import relationship
 
-from app.db.base import Base
+from app.db.base import Base, TimestampMixin
+from app.models.user_badge import user_badges
 
 
-class Badge(Base):
+class Badge(TimestampMixin, Base):
     __tablename__ = "badges"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(Text, unique=True, nullable=False)
     image = Column(String, nullable=True)
     description = Column(Text, nullable=True)
-    user_id = Column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    condition_time = Column(
+        Integer,
+        unique=True,
+        nullable=False,
+        default=0,
+        server_default="0",
     )
 
-    preferences = relationship(
-        "Preference",
-        secondary="preference_badges",
+    users = relationship(
+        "User",
+        secondary="user_badges",
         back_populates="badges",
     )
-
-    user = relationship("User", back_populates="badges")

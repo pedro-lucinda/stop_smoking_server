@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.routers import health, motivation, preference, user, diary, craving
+from app.api.v1.routers import health, motivation, preference, user, diary, craving, badges
 from app.core.config import settings
 from app.core.openapi import custom_openapi
 from app.core.scheduler import init_scheduler
@@ -63,6 +63,12 @@ def create_app() -> FastAPI:
         craving.router,
         prefix=f"{settings.api_v1_str}/craving",
         tags=["craving"],
+    )
+
+    app.include_router(
+        badges.router,
+        prefix=f"{settings.api_v1_str}/badge",
+        tags=["badge"],
     )
 
     # Scheduler

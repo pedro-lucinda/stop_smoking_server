@@ -2,8 +2,6 @@ from sqlalchemy import Column, Date, ForeignKey, Integer, Text
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base, TimestampMixin
-from app.models.association import preference_badges
-from app.models.badge import Badge
 from app.models.goal import Goal
 
 
@@ -20,14 +18,10 @@ class Preference(TimestampMixin, Base):
     cig_per_day = Column(Integer, nullable=True, default=0)
     years_smoking = Column(Integer, nullable=True, default=0)
     cig_price = Column(
-        Integer, nullable=True, default=0, comment="Price per cigarette in local currency"
-    )
-
-    badges = relationship(
-        Badge,
-        secondary=preference_badges,
-        back_populates="preferences",
-        cascade="save-update, merge",
+        Integer,
+        nullable=True,
+        default=0,
+        comment="Price per cigarette in local currency",
     )
 
     goals = relationship(

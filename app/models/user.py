@@ -7,6 +7,7 @@ from app.models.craving import Craving
 from app.models.diary import Diary
 from app.models.motivation import DailyMotivation
 from app.models.preference import Preference
+from app.models.user_badge import user_badges
 
 
 class User(Base):
@@ -34,6 +35,6 @@ class User(Base):
 
     badges = relationship(
         "Badge",
-        back_populates="user",
-        cascade="all, delete-orphan",
+        secondary="user_badges",
+        back_populates="users",
     )

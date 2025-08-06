@@ -1,5 +1,5 @@
 import os
-from typing import Dict
+from typing import Dict, List
 
 import httpx
 import requests
@@ -86,6 +86,15 @@ def verify_jwt(token: str) -> Dict:
         )
 
 
+def get_token_payload(
+    token: str = Security(oauth2_scheme),
+) -> Dict:
+    """
+    Dependency that verifies the token and returns its decoded payload.
+    """
+    return verify_jwt(token)
+
+
 def fetch_userinfo(token: str) -> Dict:
     """
     Fetch full user profile from Auth0 UserInfo endpoint.
@@ -105,38 +114,25 @@ def get_current_user(
     token: str = Security(oauth2_scheme),
     db: Session = Depends(get_db_session),
 ) -> User:
-    """
-    1) Verify & decode the Auth0 JWT
-    2) Fetch user profile via /userinfo to get email, name, etc.
-    3) Look up or lazy-provision the User by auth0_id
-    4) Return the SQLAlchemy User instance
-    """
-    # 1) Verify access token
-    _ = verify_jwt(token)
+    # 1. Verify & decode the Access Token
+    payload = verify_jwt(token)
+    print("USER -----------------------------------------", payload)
 
-    # 2) Fetch full user profile
-    profile = fetch_userinfo(token)
-    auth0_sub = profile.get("sub")
-    email = profile.get("email")
-    name = profile.get("name")
+    # 2. Extract Auth0 subject & profile claims you need
+    auth0_sub = payload["sub"]
+    email = payload.get("email")
+    name = payload.get("name")
 
-    if not auth0_sub:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="UserInfo missing 'sub'"
-        )
-
-    # 3) Lookup or create user
+    # 3. (Upsert) your User row
     user = db.query(User).filter(User.auth0_id == auth0_sub).first()
     if not user:
-        user = User(
-            auth0_id=auth0_sub,
-            email=email or "",
-            name=name,
-        )
+        user = User(auth0_id=auth0_sub, email=email or "", name=name)
         db.add(user)
         db.commit()
         db.refresh(user)
 
+    # 4. **Attach the raw payload so downstream deps can read roles**
+    user.token_payload = payload
     return user
 
 
@@ -178,3 +174,18 @@ def can_update_email(auth0_id: str) -> bool:
     identities = r.json().get("identities", [])
     # “auth0” provider == native database user
     return any(idf.get("provider") == "auth0" for idf in identities)
+
+
+def require_permission(permission: str):
+    def checker(
+        current_user=Depends(get_current_user),
+    ):
+        perms = current_user.token_payload.get("permissions", [])
+        if permission not in perms:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing permission: {permission}",
+            )
+        return current_user
+
+    return checker
