@@ -11,6 +11,8 @@ router = APIRouter()
 
 @router.get("/", response_model=CravingListOut, status_code=status.HTTP_200_OK)
 def list_cravings(
+    skip: int = 0,
+    limit: int = 100,
     current_user=Depends(get_current_user),
 ) -> CravingListOut:
     """
@@ -22,8 +24,9 @@ def list_cravings(
     Returns:
         CravingListOut: A list of cravings and the total count.
     """
-    cravings = current_user.cravings
-    return CravingListOut(cravings=cravings, total=len(cravings))
+    cravings = current_user.cravings[skip : skip + limit if limit else None]
+
+    return CravingListOut(cravings=cravings, total=len(current_user.cravings))
 
 
 @router.get("/{craving_id}", response_model=CravingOut, status_code=status.HTTP_200_OK)

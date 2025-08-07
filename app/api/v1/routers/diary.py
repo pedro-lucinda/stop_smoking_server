@@ -11,6 +11,8 @@ router = APIRouter()
 
 @router.get("/", response_model=DiaryListOut, status_code=status.HTTP_200_OK)
 def list_diary_entries(
+    skip: int = 0,
+    limit: int = 100,
     current_user=Depends(get_current_user),
 ) -> DiaryListOut:
     """
@@ -22,8 +24,8 @@ def list_diary_entries(
     Returns:
         DiaryListOut: A list of diary entries and the total count.
     """
-    diaries = current_user.diaries
-    return DiaryListOut(diaries=diaries, total=len(diaries))
+    diaries = current_user.diaries[skip : skip + limit if limit else None]
+    return DiaryListOut(diaries=diaries, total=len(current_user.diaries))
 
 
 @router.get("/{diary_id}", response_model=DiaryOut, status_code=status.HTTP_200_OK)
@@ -77,7 +79,7 @@ def create_diary_entry(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Diary entry for this date already exists",
         )
-    
+
     new_diary = Diary(
         user_id=current_user.id,
         date=diary_in.date,
@@ -129,6 +131,7 @@ def update_diary_entry(
     db.refresh(diary)
 
     return DiaryOut.from_orm(diary)
+
 
 @router.delete("/{diary_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_diary_entry(
