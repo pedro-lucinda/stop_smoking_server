@@ -1,115 +1,139 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 from datetime import date
 from typing import List
 
-from app.api.v1.dependencies.db import get_db_session
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select, delete
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
 from app.api.v1.dependencies.auth0 import get_current_user
-from app.models.preference import Preference
+from app.api.v1.dependencies.db import get_async_db
 from app.models.goal import Goal
-from app.schemas.preference import PreferenceCreate, PreferenceOut, PreferenceUpdate
 from app.models.motivation import DailyMotivation
+from app.models.preference import Preference
+from app.schemas.preference import PreferenceCreate, PreferenceOut, PreferenceUpdate
 from app.services.motivation_service import generate_and_save_for_user
 
 router = APIRouter()
 
 
 @router.get("/", response_model=PreferenceOut, status_code=status.HTTP_200_OK)
-def list_preference(current_user=Depends(get_current_user)) -> PreferenceOut:
-    preference = current_user.preference
+async def list_preference(
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(get_current_user),
+) -> PreferenceOut:
+    # Eager-load goals to avoid async lazy-loads
+    res = await db.execute(
+        select(Preference)
+        .options(selectinload(Preference.goals))
+        .where(Preference.user_id == current_user.id)
+    )
+    preference = res.scalar_one_or_none()
     if not preference:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No preference set",
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No preference set"
         )
     return preference
 
 
 @router.post("/", response_model=PreferenceOut, status_code=status.HTTP_201_CREATED)
-def create_preferences(
+async def create_preferences(
     pref_in: PreferenceCreate,
-    db: Session = Depends(get_db_session),
+    db: AsyncSession = Depends(get_async_db),
     current_user=Depends(get_current_user),
 ) -> PreferenceOut:
-    if current_user.preference:
+    # Ensure user doesn't already have a preference
+    exists = await db.scalar(
+        select(Preference.id).where(Preference.user_id == current_user.id).limit(1)
+    )
+    if exists:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Preferences already set",
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Preferences already set"
         )
 
-    # 1) Create the Preference itself
     pref = Preference(
         user_id=current_user.id,
         reason=pref_in.reason,
         quit_date=pref_in.quit_date,
     )
 
-    # 2) Turn each GoalCreate into a Goal model instance
-    for goal_data in pref_in.goals:
+    for goal_data in pref_in.goals or []:
         goal = Goal(
             description=goal_data.description,
             is_completed=goal_data.is_completed,
         )
         pref.goals.append(goal)
 
-    # 3) Persist both Preference and its Goals in one go
     db.add(pref)
-    db.commit()
-    db.refresh(pref)
+    await db.commit()
+    await db.refresh(pref)
 
-    # Generate motivation
-    generate_and_save_for_user(db=db, user_id=current_user.id)
+    # Generate today's motivation (async service)
+    await generate_and_save_for_user(db=db, user_id=current_user.id)
     return pref
 
 
 @router.patch("/", response_model=PreferenceOut, status_code=status.HTTP_200_OK)
-def update_preferences(
+async def update_preferences(
     pref_in: PreferenceUpdate,
-    db: Session = Depends(get_db_session),
+    db: AsyncSession = Depends(get_async_db),
     current_user=Depends(get_current_user),
 ) -> PreferenceOut:
-    """
-    Update the current user's Preference and immediately regenerate
-    today's motivation text if the quit_date has changed.
-    """
-    pref = current_user.preference
+    # Load current preference with goals
+    res = await db.execute(
+        select(Preference)
+        .options(selectinload(Preference.goals))
+        .where(Preference.user_id == current_user.id)
+    )
+    pref = res.scalar_one_or_none()
     if not pref:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Preferences not found"
         )
 
-    # Update scalar fields except goals
-    for field, value in pref_in.dict(exclude_unset=True, exclude={"goals"}).items():
+    # Update scalar fields (except goals)
+    for field, value in pref_in.model_dump(
+        exclude_unset=True, exclude={"goals"}
+    ).items():
         setattr(pref, field, value)
 
     # Handle nested goals if provided
     if pref_in.goals is not None:
-        existing_goals = {g.id: g for g in pref.goals}
-        new_goals_list: List[Goal] = []
-        for goal_data in pref_in.goals:
-            if goal_data.id and goal_data.id in existing_goals:
-                goal = existing_goals[goal_data.id]
-                if goal_data.description is not None:
-                    goal.description = goal_data.description
-                if goal_data.is_completed is not None:
-                    goal.is_completed = goal_data.is_completed
+        existing = {g.id: g for g in pref.goals if g.id is not None}
+        new_list: List[Goal] = []
+        for g in pref_in.goals:
+            if g.id and g.id in existing:
+                goal = existing[g.id]
+                if g.description is not None:
+                    goal.description = g.description
+                if g.is_completed is not None:
+                    goal.is_completed = g.is_completed
+                new_list.append(goal)
             else:
-                goal = Goal(
-                    description=goal_data.description or "",
-                    is_completed=goal_data.is_completed or False,
+                new_list.append(
+                    Goal(
+                        description=g.description or "",
+                        is_completed=(
+                            bool(g.is_completed)
+                            if g.is_completed is not None
+                            else False
+                        ),
+                    )
                 )
-            new_goals_list.append(goal)
-        pref.goals[:] = new_goals_list
+        pref.goals[:] = new_list
 
-    db.commit()
-    db.refresh(pref)
+    await db.commit()
+    await db.refresh(pref)
 
-    # Evict today's stale motivation (if any) and regenerate
+    # Remove today's old motivation and regenerate
     today = date.today()
-    db.query(DailyMotivation).filter_by(user_id=current_user.id, date=today).delete()
-    db.commit()
+    await db.execute(
+        delete(DailyMotivation).where(
+            DailyMotivation.user_id == current_user.id,
+            DailyMotivation.date == today,
+        )
+    )
+    await db.commit()
 
-    # Regenerate motivation text immediately with updated quit_date
-    generate_and_save_for_user(db=db, user_id=current_user.id)
-
+    await generate_and_save_for_user(db=db, user_id=current_user.id)
     return pref

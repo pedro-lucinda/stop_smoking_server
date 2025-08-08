@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from app.api.v1.dependencies.auth0 import get_current_user
-from app.api.v1.dependencies.db import get_db_session
+from app.api.v1.dependencies.db import get_async_db
 from app.models.diary import Diary
 from app.schemas.diary import DiaryIn, DiaryListOut, DiaryOut, DiaryUpdate
 
@@ -10,71 +12,59 @@ router = APIRouter()
 
 
 @router.get("/", response_model=DiaryListOut, status_code=status.HTTP_200_OK)
-def list_diary_entries(
+async def list_diary_entries(
     skip: int = 0,
     limit: int = 100,
+    db: AsyncSession = Depends(get_async_db),
     current_user=Depends(get_current_user),
 ) -> DiaryListOut:
-    """
-    List all diary entries for the current user.
-
-    This endpoint retrieves all diary entries associated with the authenticated user.
-    It returns a list of diary entries along with the total count.
-
-    Returns:
-        DiaryListOut: A list of diary entries and the total count.
-    """
-    diaries = current_user.diaries[skip : skip + limit if limit else None]
-    return DiaryListOut(diaries=diaries, total=len(current_user.diaries))
+    total = await db.scalar(
+        select(func.count(Diary.id)).where(Diary.user_id == current_user.id)
+    )
+    result = await db.execute(
+        select(Diary)
+        .where(Diary.user_id == current_user.id)
+        .order_by(Diary.date.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    diaries = result.scalars().all()
+    return DiaryListOut(diaries=diaries, total=total or 0)
 
 
 @router.get("/{diary_id}", response_model=DiaryOut, status_code=status.HTTP_200_OK)
-def get_diary_entry(
+async def get_diary_entry(
     diary_id: int,
+    db: AsyncSession = Depends(get_async_db),
     current_user=Depends(get_current_user),
 ) -> DiaryOut:
-    """
-    Retrieve a specific diary entry by its ID.
-
-    This endpoint fetches a diary entry for the authenticated user based on the provided ID.
-
-    Args:
-        diary_id (int): The ID of the diary entry to retrieve.
-    Returns:
-        DiaryOut: The diary entry with the specified ID.
-    Raises:
-        HTTPException: If the diary entry does not exist or does not belong to the current user.
-    """
-    diary = next((d for d in current_user.diaries if d.id == diary_id), None)
+    result = await db.execute(
+        select(Diary).where(Diary.id == diary_id, Diary.user_id == current_user.id)
+    )
+    diary = result.scalar_one_or_none()
     if not diary:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Diary entry not found",
+            status_code=status.HTTP_404_NOT_FOUND, detail="Diary entry not found"
         )
     return DiaryOut.from_orm(diary)
 
 
 @router.post("/", response_model=DiaryOut, status_code=status.HTTP_201_CREATED)
-def create_diary_entry(
+async def create_diary_entry(
     diary_in: DiaryIn,
-    db: Session = Depends(get_db_session),
+    db: AsyncSession = Depends(get_async_db),
     current_user=Depends(get_current_user),
 ) -> DiaryOut:
-    """
-    Create a new diary entry for the current user.
-
-    This endpoint allows the authenticated user to create a new diary entry.
-
-    Args:
-        diary_in (DiaryIn): The data for the new diary entry.
-    Returns:
-        DiaryOut: The created diary entry.
-    """
-    # Only allow one diary entry per day
-    existing_entry = next(
-        (d for d in current_user.diaries if d.date == diary_in.date), None
+    # Enforce one diary entry per day
+    exists = await db.scalar(
+        select(Diary.id)
+        .where(
+            Diary.user_id == current_user.id,
+            Diary.date == diary_in.date,
+        )
+        .limit(1)
     )
-    if existing_entry:
+    if exists:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Diary entry for this date already exists",
@@ -91,71 +81,77 @@ def create_diary_entry(
     )
 
     db.add(new_diary)
-    db.commit()
-    db.refresh(new_diary)
-
+    await db.commit()
+    await db.refresh(new_diary)
     return DiaryOut.from_orm(new_diary)
 
 
 @router.patch("/{diary_id}", response_model=DiaryOut, status_code=status.HTTP_200_OK)
-def update_diary_entry(
+async def update_diary_entry(
     diary_id: int,
     diary_update: DiaryUpdate,
-    db: Session = Depends(get_db_session),
+    db: AsyncSession = Depends(get_async_db),
     current_user=Depends(get_current_user),
 ) -> DiaryOut:
-    """
-    Update an existing diary entry.
-
-    This endpoint allows the authenticated user to update a specific diary entry.
-
-    Args:
-        diary_id (int): The ID of the diary entry to update.
-        diary_update (DiaryUpdate): The updated data for the diary entry.
-    Returns:
-        DiaryOut: The updated diary entry.
-    Raises:
-        HTTPException: If the diary entry does not exist or does not belong to the current user.
-    """
-    diary = next((d for d in current_user.diaries if d.id == diary_id), None)
+    result = await db.execute(
+        select(Diary).where(Diary.id == diary_id, Diary.user_id == current_user.id)
+    )
+    diary = result.scalar_one_or_none()
     if not diary:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Diary entry not found",
+            status_code=status.HTTP_404_NOT_FOUND, detail="Diary entry not found"
         )
 
-    for key, value in diary_update.dict(exclude_unset=True).items():
+    updates = diary_update.dict(exclude_unset=True)
+
+    # If date changes, keep the (user_id, date) uniqueness
+    if "date" in updates and updates["date"] != diary.date:
+        clash = await db.scalar(
+            select(Diary.id)
+            .where(
+                Diary.user_id == current_user.id,
+                Diary.date == updates["date"],
+                Diary.id != diary_id,
+            )
+            .limit(1)
+        )
+        if clash:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Another diary entry already exists for that date",
+            )
+
+    for key, value in updates.items():
         setattr(diary, key, value)
 
-    db.commit()
-    db.refresh(diary)
-
+    await db.commit()
+    await db.refresh(diary)
     return DiaryOut.from_orm(diary)
 
 
 @router.delete("/{diary_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_diary_entry(
+async def delete_diary_entry(
     diary_id: int,
-    db: Session = Depends(get_db_session),
+    db: AsyncSession = Depends(get_async_db),
     current_user=Depends(get_current_user),
 ):
-    """
-    Delete a diary entry.
-
-    This endpoint allows the authenticated user to delete a specific diary entry by its ID.
-
-    Args:
-        diary_id (int): The ID of the diary entry to delete.
-    Raises:
-        HTTPException: If the diary entry does not exist or does not belong to the current user
-    """
-    diary = next((d for d in current_user.diaries if d.id == diary_id), None)
+    result = await db.execute(
+        select(Diary).where(Diary.id == diary_id, Diary.user_id == current_user.id)
+    )
+    diary = result.scalar_one_or_none()
     if not diary:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Diary entry not found",
+            status_code=status.HTTP_404_NOT_FOUND, detail="Diary entry not found"
         )
 
-    db.delete(diary)
-    db.commit()
-    return {"message": "Diary entry deleted successfully"}
+    try:
+        await db.delete(diary)  # async delete
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Diary entry is referenced by other records",
+        ) from e
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

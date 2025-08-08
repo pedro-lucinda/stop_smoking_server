@@ -2,8 +2,13 @@ import json
 import re
 from datetime import date
 
-import openai
-from sqlalchemy.orm import Session
+from fastapi import HTTPException
+
+# If you have openai>=1.x:
+from openai import AsyncOpenAI
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.models.motivation import DailyMotivation
@@ -11,22 +16,35 @@ from app.models.preference import Preference
 from app.prompts.motivation import get_motivation_prompt
 from app.schemas.motivation import DetailedMotivationOut
 
-openai.api_key = settings.openai_api_key
+client = AsyncOpenAI(api_key=settings.openai_api_key)
 
 
-def generate_and_save_for_user(db: Session, user_id: int) -> DailyMotivation:
+async def generate_and_save_for_user(db: AsyncSession, user_id: int) -> DailyMotivation:
     """
     Generate today's motivation for a single user, store it (replacing
     any existing row for today), and return the DailyMotivation record.
     """
-    # 1) load preference
-    pref: Preference = db.query(Preference).filter_by(user_id=user_id).first()
+    # 1) load preference WITH goals eagerly to avoid async lazy-loads
+    pref_res = await db.execute(
+        select(Preference)
+        .options(selectinload(Preference.goals))
+        .where(Preference.user_id == user_id)
+    )
+    pref: Preference | None = pref_res.scalar_one_or_none()
     if not pref:
-        raise ValueError(f"No preference set for user {user_id}")
+        raise HTTPException(
+            status_code=400, detail=f"No preference set for user {user_id}"
+        )
 
     today = date.today()
-    # 2) delete stale
-    db.query(DailyMotivation).filter_by(user_id=user_id, date=today).delete()
+
+    # 2) delete stale row for today (idempotent)
+    await db.execute(
+        delete(DailyMotivation).where(
+            DailyMotivation.user_id == user_id,
+            DailyMotivation.date == today,
+        )
+    )
 
     # 3) compute progress intro
     days = (today - pref.quit_date).days
@@ -47,11 +65,13 @@ def generate_and_save_for_user(db: Session, user_id: int) -> DailyMotivation:
             "include enhanced lung function and a steadier heart rate."
         )
 
-    # 4) build & call OpenAI
+    # 4) build & call OpenAI (async)
+    goal_descriptions = [g.description for g in (pref.goals or [])]
     prompt = get_motivation_prompt(
-        intro, pref.reason, [g.description for g in pref.goals], days, pref.language
+        intro, pref.reason, goal_descriptions, days, pref.language
     )
-    resp = openai.chat.completions.create(
+
+    resp = await client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are a caring, evidence-based coach."},
@@ -60,10 +80,15 @@ def generate_and_save_for_user(db: Session, user_id: int) -> DailyMotivation:
         max_tokens=2000,
         temperature=0.7,
     )
+
     raw = resp.choices[0].message.content.strip()
     clean = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE)
-    data = json.loads(clean)
-    mot = DetailedMotivationOut.model_validate(data)
+
+    try:
+        data = json.loads(clean)
+        mot = DetailedMotivationOut.model_validate(data)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail="Invalid model response") from e
 
     # 5) persist
     record = DailyMotivation(
@@ -76,6 +101,6 @@ def generate_and_save_for_user(db: Session, user_id: int) -> DailyMotivation:
         recommendations=mot.recommendations,
     )
     db.add(record)
-    db.commit()
-    db.refresh(record)
+    await db.commit()
+    await db.refresh(record)
     return record

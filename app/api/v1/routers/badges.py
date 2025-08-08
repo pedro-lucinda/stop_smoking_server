@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.v1.dependencies.auth0 import get_current_user, require_permission
-from app.api.v1.dependencies.db import get_db_session
+from app.api.v1.dependencies.db import get_async_db
 from app.models.badge import Badge
 from app.models.user import User
 from app.schemas.badges import (
@@ -24,56 +26,72 @@ router = APIRouter()
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_permission("manage:badges"))],
 )
-def create_badge(
+async def create_badge(
     badge_in: BadgesIn,
-    db: Session = Depends(get_db_session),
+    db: AsyncSession = Depends(get_async_db),
 ):
     badge = Badge(**badge_in.dict())
-    db.add(badge)
+    db.add(badge)  # add is sync; flush/commit does the I/O
     try:
-        db.commit()
+        await db.commit()
     except IntegrityError as e:
-        db.rollback()
+        await db.rollback()
         if "uq_badges_condition_time" in str(e.orig):
             raise HTTPException(
-                status_code=400,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail="A badge with that condition_time already exists.",
             ) from e
         raise
-    db.refresh(badge)
+    await db.refresh(badge)
     return badge
 
 
 @router.get("/", response_model=BadgesListOut)
-def list_badges(
+async def list_badges(
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db_session),
+    db: AsyncSession = Depends(get_async_db),
 ):
-    query = db.query(Badge)
-    total = query.count()
-    badges = query.offset(skip).limit(limit).all()
-    return BadgesListOut(badges=badges, total=total)
+    total = await db.scalar(select(func.count()).select_from(Badge))
+    result = await db.execute(select(Badge).offset(skip).limit(limit))
+    badges = result.scalars().all()
+    return BadgesListOut(badges=badges, total=total or 0)
 
 
 @router.get("/me", response_model=BadgesListOut)
-def list_current_user_badges(
+async def list_current_user_badges(
     current_user: User = Depends(get_current_user),
     skip: int = 0,
     limit: int = 100,
+    db: AsyncSession = Depends(get_async_db),
 ) -> BadgesListOut:
-    badges = current_user.badges
-    total = len(badges)
-    sliced = badges[skip : skip + limit]
-    return BadgesListOut(badges=sliced, total=total)
+    # Total count (DISTINCT to be safe on M2M joins)
+    total = await db.scalar(
+        select(func.count(func.distinct(Badge.id)))
+        .select_from(Badge)
+        .join(User.badges)  # requires relationship User.badges -> Badge
+        .where(User.id == current_user.id)  # swap to .sub if that's your key
+    )
+
+    # Page of badges
+    result = await db.execute(
+        select(Badge)
+        .join(User.badges)
+        .where(User.id == current_user.id)
+        .order_by(Badge.id)
+        .offset(skip)
+        .limit(limit)
+    )
+    badges = result.scalars().all()
+    return BadgesListOut(badges=badges, total=total or 0)
 
 
 @router.get("/{badge_id}", response_model=BadgesOut)
-def get_badge(
+async def get_badge(
     badge_id: int,
-    db: Session = Depends(get_db_session),
+    db: AsyncSession = Depends(get_async_db),
 ):
-    badge = db.query(Badge).get(badge_id)
+    badge = await db.get(Badge, badge_id)
     if not badge:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Badge not found"
@@ -86,26 +104,24 @@ def get_badge(
     response_model=BadgesOut,
     dependencies=[Depends(require_permission("manage:badges"))],
 )
-def update_badge(
+async def update_badge(
     badge_id: int,
     badge_in: BadgesUpdate,
-    db: Session = Depends(get_db_session),
+    db: AsyncSession = Depends(get_async_db),
 ):
-    badge = db.get(Badge, badge_id)
+    badge = await db.get(Badge, badge_id)
     if not badge:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Badge not found"
         )
 
-    # only update the fields that were actually sent
     for field, value in badge_in.dict(exclude_unset=True).items():
         setattr(badge, field, value)
 
     try:
-        db.commit()
+        await db.commit()
     except IntegrityError as e:
-        db.rollback()
-        # dig into e.orig to pick out which constraint failed
+        await db.rollback()
         err_msg = str(e.orig).lower()
         if "badges_name_key" in err_msg or "uq_badges_name" in err_msg:
             detail = "A badge with that name already exists."
@@ -120,7 +136,7 @@ def update_badge(
             status_code=status.HTTP_400_BAD_REQUEST, detail=detail
         ) from e
 
-    db.refresh(badge)
+    await db.refresh(badge)
     return badge
 
 
@@ -129,17 +145,28 @@ def update_badge(
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_permission("manage:badges"))],
 )
-def delete_badge(
+async def delete_badge(
     badge_id: int,
-    db: Session = Depends(get_db_session),
+    db: AsyncSession = Depends(get_async_db),
 ):
-    badge = db.query(Badge).get(badge_id)
+    badge = await db.get(Badge, badge_id)
     if not badge:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Badge not found"
         )
-    db.delete(badge)
-    db.commit()
+
+    try:
+        await db.delete(badge)
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        # FK/cascade block – surface as 409
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Badge is referenced by other records",
+        ) from e
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
@@ -148,30 +175,32 @@ def delete_badge(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_permission("manage:badges"))],
 )
-def assign_badge_to_user(
+async def assign_badge_to_user(
     badge_id: int,
     assign_in: UserBadgeCreate,
-    db: Session = Depends(get_db_session),
+    db: AsyncSession = Depends(get_async_db),
 ):
     if badge_id != assign_in.badge_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Badge ID mismatch"
         )
-    user = db.query(User).get(assign_in.user_id)
+
+    user = await db.get(User, assign_in.user_id, options=(selectinload(User.badges),))
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-    badge = db.query(Badge).get(badge_id)
+        raise HTTPException(status_code=404, detail="User not found")
+
+    badge = await db.get(Badge, badge_id)
     if not badge:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Badge not found"
-        )
-    if badge in user.badges:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Badge already assigned to user",
-        )
-    user.badges.append(badge)
-    db.commit()
+        raise HTTPException(status_code=404, detail="Badge not found")
+
+    if any(b.id == badge_id for b in user.badges):
+        raise HTTPException(status_code=400, detail="Badge already assigned to user")
+
+    user.badges.append(badge)  # relationship op is sync
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="Could not assign badge") from e
+
     return assign_in

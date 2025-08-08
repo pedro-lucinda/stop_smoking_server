@@ -1,14 +1,14 @@
-import os
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import httpx
 import requests
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import OAuth2AuthorizationCodeBearer
 from jose import jwt
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.dependencies.db import get_db_session
+from app.api.v1.dependencies.db import get_async_db
 from app.core.config import settings
 from app.models.user import User
 
@@ -26,13 +26,15 @@ oauth2_scheme = OAuth2AuthorizationCodeBearer(
     scopes={},
 )
 
-_jwks_cache = None
+_jwks_cache: Optional[Dict] = None
 
 
 def get_jwks() -> Dict:
     global _jwks_cache
     if _jwks_cache is None:
-        resp = requests.get(f"https://{auth0_domain}/.well-known/jwks.json")
+        resp = requests.get(
+            f"https://{auth0_domain}/.well-known/jwks.json", timeout=5.0
+        )
         resp.raise_for_status()
         _jwks_cache = resp.json()
     return _jwks_cache
@@ -57,6 +59,8 @@ def verify_jwt(token: str) -> Dict:
                 "n": key.get("n"),
                 "e": key.get("e"),
             }
+            break
+
     if not rsa_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -86,53 +90,60 @@ def verify_jwt(token: str) -> Dict:
         )
 
 
-def get_token_payload(
-    token: str = Security(oauth2_scheme),
-) -> Dict:
-    """
-    Dependency that verifies the token and returns its decoded payload.
-    """
+def get_token_payload(token: str = Security(oauth2_scheme)) -> Dict:
+    """Dependency that verifies the token and returns its decoded payload."""
     return verify_jwt(token)
 
 
-def fetch_userinfo(token: str) -> Dict:
-    """
-    Fetch full user profile from Auth0 UserInfo endpoint.
-    """
-    resp = requests.get(
-        f"https://{auth0_domain}/userinfo", headers={"Authorization": f"Bearer {token}"}
-    )
-    if not resp.ok:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Failed to fetch user profile",
-        )
-    return resp.json()
-
-
-def get_current_user(
-    token: str = Security(oauth2_scheme),
-    db: Session = Depends(get_db_session),
+async def get_current_user(
+    db: AsyncSession = Depends(get_async_db),
+    token_data: Dict = Depends(get_token_payload),
+    raw_token: str = Security(oauth2_scheme),
 ) -> User:
-    # 1. Verify & decode the Access Token
-    payload = verify_jwt(token)
-    print("USER -----------------------------------------", payload)
+    """
+    Resolve the current user from Auth0 sub, creating the user if not present.
+    Uses token claims and (optionally) /userinfo to fill profile fields.
+    """
+    auth0_sub = token_data.get("sub")
+    if not auth0_sub:
+        raise HTTPException(status_code=401, detail="Token missing 'sub' claim.")
 
-    # 2. Extract Auth0 subject & profile claims you need
-    auth0_sub = payload["sub"]
-    email = payload.get("email")
-    name = payload.get("name")
+    # Try to find existing user
+    result = await db.execute(select(User).where(User.auth0_id == auth0_sub))
+    user = result.scalar_one_or_none()
 
-    # 3. (Upsert) your User row
-    user = db.query(User).filter(User.auth0_id == auth0_sub).first()
-    if not user:
-        user = User(auth0_id=auth0_sub, email=email or "", name=name)
+    if user is None:
+        # Fill basic profile fields from token; if missing, try /userinfo (async).
+        email = token_data.get("email")
+        name = token_data.get("name")
+        picture = token_data.get("picture")
+
+        if not (email and name):
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    r = await client.get(
+                        f"https://{auth0_domain}/userinfo",
+                        headers={"Authorization": f"Bearer {raw_token}"},
+                    )
+                    if r.status_code == 200:
+                        info = r.json()
+                        email = email or info.get("email")
+                        name = name or info.get("name")
+                        picture = picture or info.get("picture")
+            except Exception:
+                # Don't fail login if userinfo fetch fails; proceed with what we have.
+                pass
+
+        user = User(
+            auth0_id=auth0_sub,
+            email=email,
+            name=name,
+            picture=picture,
+        )
         db.add(user)
-        db.commit()
-        db.refresh(user)
+        await db.commit()
+        await db.refresh(user)
 
-    # 4. **Attach the raw payload so downstream deps can read roles**
-    user.token_payload = payload
     return user
 
 
@@ -145,6 +156,7 @@ def get_m2m_token() -> str:
             "client_secret": client_secret,
             "audience": f"https://{auth0_domain}/api/v2/",
         },
+        timeout=10.0,
     )
     resp.raise_for_status()
     return resp.json()["access_token"]
@@ -159,7 +171,7 @@ def update_user_email(auth0_id: str, new_email: str):
         "email_verified": False,  # force re-verify
         "verify_email": True,  # trigger the confirmation email
     }
-    r = httpx.patch(url, json=payload, headers=headers)
+    r = httpx.patch(url, json=payload, headers=headers, timeout=10.0)
     r.raise_for_status()
     return r.json()
 
@@ -177,15 +189,23 @@ def can_update_email(auth0_id: str) -> bool:
 
 
 def require_permission(permission: str):
-    def checker(
-        current_user=Depends(get_current_user),
-    ):
-        perms = current_user.token_payload.get("permissions", [])
+    """
+    Router-level dependency: checks the permission in the token.
+    Usage: dependencies=[Depends(require_permission("manage:badges"))]
+    """
+
+    async def checker(token_data: Dict = Depends(get_token_payload)):
+        # Auth0 can place permissions either in a 'permissions' array, or in 'scope' (space-delimited)
+        perms: List[str] = token_data.get("permissions") or []
+        if not perms:
+            scope = token_data.get("scope", "")
+            perms = scope.split() if scope else []
+
         if permission not in perms:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Missing permission: {permission}",
             )
-        return current_user
+        # No return needed; this is just a guard.
 
     return checker

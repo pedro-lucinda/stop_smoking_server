@@ -1,12 +1,8 @@
-from typing import Generator
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy.orm import Session
-
-from app.db.session import get_db
+from app.db.async_session import async_session
 
 
-def get_db_session() -> Generator[Session, None, None]:
-    """
-    Provide a database session for a request.
-    """
-    yield from get_db()
+async def get_async_db() -> AsyncSession:
+    async with async_session() as session:
+        yield session

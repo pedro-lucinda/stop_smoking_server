@@ -26,7 +26,10 @@ class Settings(BaseSettings):
     postgres_password: str = os.getenv("POSTGRES_PASSWORD", "password")
     postgres_db: str = os.getenv("POSTGRES_DB", "db")
     sqlalchemy_database_uri: str = ""  # built in __init__
-
+    database_url: str = os.getenv(
+        "DATABASE_URL", "postgresql+asyncpg://postgres:example@db:5432/db"
+    )
+    db_eco: str = False
     # Redis
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 

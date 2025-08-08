@@ -1,8 +1,11 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.dependencies.auth0 import get_current_user
+from app.api.v1.dependencies.db import get_async_db
 from app.core.health import (
     calculate_breathing,
     calculate_carbon_monoxide_level,
@@ -12,31 +15,38 @@ from app.core.health import (
     calculate_energy_levels,
     calculate_gum_texture,
     calculate_immunity_and_lung_function,
+    calculate_life_regained_in_hours,
     calculate_nicotine_expelled,
     calculate_oxygen_levels,
     calculate_pulse_rate,
     calculate_reduced_risk_of_heart_disease,
     calculate_taste_and_smell,
-    calculate_life_regained_in_hours,
 )
+from app.models.preference import Preference
 from app.schemas.health import HealthOut
 
 router = APIRouter()
 
 
 @router.get("/", response_model=HealthOut, status_code=status.HTTP_200_OK)
-def get_health_data(
+async def get_health_data(
+    db: AsyncSession = Depends(get_async_db),
     current_user=Depends(get_current_user),
 ) -> HealthOut:
     """
-    Retrieve health data for a specific date.
-    If no data exists for the date, raise a 404 error.
+    Compute health metrics based on the user's quit_date.
+    Avoid async lazy-loads by querying Preference explicitly.
     """
-    pref = current_user.preference
+    # Load the user's Preference explicitly (no lazy access via current_user.preference)
+    res = await db.execute(
+        select(Preference).where(Preference.user_id == current_user.id)
+    )
+    pref = res.scalar_one_or_none()
     if not pref:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Preferences not found"
         )
+
     quit_date = pref.quit_date
     days_since_quit = (date.today() - quit_date).days
 
