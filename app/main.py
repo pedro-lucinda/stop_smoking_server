@@ -6,6 +6,7 @@ from app.api.v1.routers import (
     craving,
     diary,
     health,
+    healthcheck,
     motivation,
     preference,
     user,
@@ -41,6 +42,11 @@ def create_app() -> FastAPI:
     )
 
     # Routers
+    app.include_router(
+        healthcheck.router,
+        prefix=f"{settings.api_v1_str}",
+        tags=["healthcheck"],
+    )
     app.include_router(
         user.router,
         prefix=f"{settings.api_v1_str}/user",

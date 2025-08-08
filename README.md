@@ -1,165 +1,182 @@
-## 🚀 Project Overview
+Sweet—let’s modernize your README to match the **async** stack, **separate scheduler**, and Auth0/OpenAI bits. Here’s a drop-in replacement:
 
-- **Language & Framework:** Python 3.11, FastAPI
-- **Database:** PostgreSQL (SQLAlchemy + Alembic)
-- **Auth:** Auth0 — OAuth2 Authorization Code (PKCE)
-- **Containerization:** Docker & Docker Compose
+# 🚭 Stop Smoking API
 
----
+API for a quit-smoking app built with **FastAPI**, **SQLAlchemy 2.0 (async)**, and **Auth0**. Includes a background **scheduler** for daily motivation and badge assignment.
 
-## 📦 Prerequisites
+# 🚀 Project Overview
 
-- Docker & Docker Compose (v2+)
-- (Optional) Python 3.11 + virtualenv, if running locally
+* **Language & Framework:** Python 3.11, FastAPI
+* **DB & ORM:** PostgreSQL · SQLAlchemy 2.0 **async** (`AsyncSession`) · Alembic
+* **Driver:** `asyncpg`
+* **Auth:** Auth0 (OAuth2 Authorization Code + PKCE, RS256)
+* **Background jobs:** APScheduler (separate container)
+* **AI (optional):** OpenAI for daily motivation text
+* **Containers:** Docker + Docker Compose
 
----
+# 📦 Prerequisites
 
-## ⚙️ Setup & Running with Docker
+* Docker & Docker Compose (v2)
+* (Optional) Python 3.11 + virtualenv for local, non-Docker runs
 
-1. **Clone the repo**
+# ⚙️ Setup & Run (Docker)
 
-   ```bash
-   git clone {repo_url}
-   cd {repo_dir}
-   ```
+1. **Clone**
 
-2. **Configure environment**  
-   Copy `.env.example` → `.env` and fill in these values:
+```bash
+git clone {repo_url}
+cd {repo_dir}
+```
 
-   ```ini
-   # Database & cache
-   DATABASE_URL=postgresql+psycopg2://postgres:example@db:5432/db
-   REDIS_URL=redis://redis:6379/0
+2. **Configure environment**
+   Copy `.env.example` → `.env` and set:
 
-   # CORS origins (e.g. frontend URL)
-   BACKEND_CORS_ORIGINS=["http://localhost:3000"]
+```ini
+# Database (async driver)
+DATABASE_URL=postgresql+asyncpg://postgres:example@db:5432/db
 
-   # Auth0 settings
-   AUTH0_DOMAIN=dev-xyz123.auth0.com
-   AUTH0_CLIENT_ID=YourAuth0ClientID
-   AUTH0_CLIENT_SECRET=YourAuth0ClientSecret   # only needed if you use client credentials flow
-   AUTH0_API_AUDIENCE=https://api.myapp.com
+# CORS (JSON list)
+BACKEND_CORS_ORIGINS=["http://localhost:3000"]
 
-   # Scheduler / timezone
-   TIMEZONE=UTC
-   ```
+# Auth0
+AUTH0_DOMAIN=dev-xyz123.auth0.com
+AUTH0_API_AUDIENCE=https://api.myapp.com
+AUTH0_CLIENT_ID=YourAuth0ClientID
+# Management API (only needed for email updates)
+AUTH0_MGMT_CLIENT_ID=YourMgmtClientID
+AUTH0_MGMT_CLIENT_SECRET=YourMgmtClientSecret
 
-3. **Build & start containers**
+# OpenAI (needed for motivation generation)
+OPENAI_API_KEY=sk-...
 
-   ```bash
-   docker-compose up --build -d
-   ```
+# Scheduler / timezone
+TIMEZONE=UTC
+# If you ever run the scheduler inside the API process (dev only)
+SCHEDULER_ENABLED=false
+```
 
-4. **Apply migrations**
 
-   ```bash
-   docker-compose run --rm api alembic upgrade head
-   ```
+3. **Build & start**
 
-5. **Open API docs**  
-   Visit in your browser:
-   ```
-   http://localhost:8000/api/v1/docs
-   ```
+```bash
+docker compose up --build -d
+```
 
----
+4. **Migrate DB**
 
-## 🔐 Auth0 Configuration
+```bash
+docker compose run --rm api alembic upgrade head
+```
 
-1. **Create Auth0 API**
+5. **Docs**
 
-   - In **Auth0 Dashboard → APIs → Create API**
-   - **Identifier** = `https://api.myapp.com` (matches `AUTH0_API_AUDIENCE`)
-   - **Signing Algorithm** = RS256
+```
+http://localhost:8000/api/v1/docs
+```
 
-2. **Create Auth0 Application**
+# 🔐 Auth0 Configuration
 
-   - In **Applications → Create Application**
-   - **Type:** Regular Web App (or Single Page App)
-   - **Allowed Callback URLs:**
+1. **Create API**
+
+   * Auth0 → **APIs** → *Create API*
+   * **Identifier:** `https://api.myapp.com` (must match `AUTH0_API_AUDIENCE`)
+   * **Signing Algorithm:** RS256
+
+2. **Create Application**
+
+   * Auth0 → **Applications** → *Create Application* → SPA or Regular Web App
+   * **Allowed Callback URLs:**
+
      ```
      http://localhost:8000/api/v1/docs/oauth2-redirect
      ```
-   - **Allowed Web Origins:**
+   * **Allowed Web Origins / Logout URLs:**
+
      ```
      http://localhost:8000
      ```
-   - **Allowed Logout URLs:**
-     ```
-     http://localhost:8000
-     ```
-   - **Save**, then copy **Client ID** → `AUTH0_CLIENT_ID`
-   - Copy **Client Secret** if you need the credentials (for backend flows)
 
-3. **Enable Scopes**  
-   Make sure the API defines at least these scopes under **Permissions → Scopes → Add Scope**:
-   - `openid`
-   - `profile`
-   - `email`
+3. **Permissions / Scopes**
 
----
+   * OIDC scopes used for login in Swagger: `openid`, `profile`, `email`
+   * API permissions used by the backend (example):
 
-## 🗂 Alembic Migrations
+     * `manage:badges` (for admin badge endpoints)
 
-- **Create a new revision**
+# 🗂 Alembic Migrations
 
-  ```bash
-  docker-compose run --rm api alembic revision --autogenerate -m "describe change"
-  ```
+```bash
+# New revision
+docker compose run --rm api alembic revision --autogenerate -m "describe change"
 
-- **Apply migrations**
+# Upgrade
+docker compose run --rm api alembic upgrade head
 
-  ```bash
-  docker-compose run --rm api alembic upgrade head
-  ```
+# Downgrade one
+docker compose run --rm api alembic downgrade -1
 
-- **Rollback one step**
+# Reset to base
+docker compose run --rm api alembic downgrade base
+```
 
-  ```bash
-  docker-compose run --rm api alembic downgrade -1
-  ```
+# 🧭 Services (Compose)
 
-- **Reset to base**
-  ```bash
-  docker-compose run --rm api alembic downgrade base
-  ```
+* **api** – FastAPI app (`uvicorn`)
+* **scheduler** – APScheduler runner (`python -m app.tasks.run_scheduler`)
+* **db** – PostgreSQL 15
 
----
+> Don’t scale the `scheduler` service beyond 1 replica unless you add a distributed lock.
 
-## ⚡️ Using the API
+# ⚡ Using the API
 
-1. **Authorize in Swagger UI**
+1. **Authorize in Swagger**
 
-   - Open `/api/v1/docs`
-   - Click **Authorize**
-   - Log in via Auth0 (PKCE flow)
-   - Swagger will store your access token automatically
+   * Open `/api/v1/docs` → **Authorize** → complete Auth0 login (PKCE)
+   * Swagger will attach `Authorization: Bearer <token>` automatically
 
-2. **Call protected endpoints**  
-   All routes under `/api/v1/preference`, `/api/v1/motivation`, `/api/v1/user` are secured.  
-   Swagger will send `Authorization: Bearer <token>` for you.
+2. **Secured routes**
 
----
+   * `/api/v1/preference`, `/api/v1/motivation`, `/api/v1/user`, etc.
+   * Some admin endpoints (e.g. `/api/v1/badge`) require `manage:badges`
 
-## 🛡 Security & Best Practices
+# 🧰 Development Notes
 
-- Secrets loaded from `.env` via Pydantic’s `BaseSettings`
-- OAuth2 tokens with expiry and RS256 verification against Auth0’s JWKS
-- Enforce HTTPS in production
-- Rate‑limit endpoints (e.g. with `slowapi`)
-- Structured logging & monitoring
+* This codebase uses **SQLAlchemy async**. In handlers/services:
 
----
+  * Inject `AsyncSession`
+  * Use `select(...)` + `await db.execute(...)`
+  * `await db.commit()`, `await db.refresh(obj)`, `await db.delete(obj)`
+  * **Do not** access lazy relationships (e.g. `current_user.diaries`) — query explicitly or use `selectinload(...)`.
 
-## 🐳 Dockerfile & Compose Highlights
+* Background jobs:
 
-- **Dockerfile**
+  * Implemented in `app/tasks/*`
+  * The scheduler service registers:
 
-  - Python 3.11‑slim base
-  - Leverages layer caching for `requirements.txt`
-  - Uses `uvicorn --reload` for development
+    * Motivation generation **every 8 hours**
+    * Badge assignment **every 24 hours**
 
-- **docker-compose.yml**
-  - Services: `api`, `db` (Postgres), `redis`
-  - Named volume for Postgres data
-  - `.env` injected into the `api` service
+# 🛡 Security & Best Practices
+
+* Secrets via Pydantic Settings (`.env`)
+* RS256 validation against Auth0 JWKS
+* HTTPS in production (terminate TLS at the proxy)
+* Rate limiting recommended (e.g. `slowapi`)
+* Structured logging with request IDs
+* DB uniqueness constraints for critical invariants (e.g., one diary entry per user per day)
+
+# 🧪 Smoke Tests (quick)
+
+```bash
+# API is up
+curl -s http://localhost:8000/api/v1/openapi.json | head -n 2
+
+# Healthcheck (if you add one)
+# curl -i http://localhost:8000/api/v1/healthcheck
+```
+
+# 🐞 Troubleshooting
+
+* **`MissingGreenlet`**: You triggered an async lazy-load. Don’t do `user.relationship` directly. Query with `select(...)` and `join/selectinload`.
+* **`asyncpg` not found**: Add `asyncpg` to `requirements.txt`, rebuild with `--no-cache`.
+* **Deletes do nothing**: With `AsyncSession`, use `await db.delete(obj)` then `await db.commit()`.
