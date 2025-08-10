@@ -100,45 +100,55 @@ async def get_current_user(
     token_data: Dict = Depends(get_token_payload),
     raw_token: str = Security(oauth2_scheme),
 ) -> User:
-    """
-    Resolve the current user from Auth0 sub, creating the user if not present.
-    Uses token claims and (optionally) /userinfo to fill profile fields.
-    """
     auth0_sub = token_data.get("sub")
     if not auth0_sub:
         raise HTTPException(status_code=401, detail="Token missing 'sub' claim.")
 
-    # Try to find existing user
+    # Try to find existing user by auth0_id
     result = await db.execute(select(User).where(User.auth0_id == auth0_sub))
     user = result.scalar_one_or_none()
 
     if user is None:
-        # Fill basic profile fields from token; if missing, try /userinfo (async).
+        # Pull claims
         email = token_data.get("email")
-        name = token_data.get("name")
-        picture = token_data.get("picture")
+        given_name = token_data.get("given_name")
+        family_name = token_data.get("family_name")
+        full_name = (
+            token_data.get("name")
+            or " ".join(n for n in (given_name, family_name) if n)
+            or None
+        )
+        picture = token_data.get("picture")  # will map to User.img
 
-        if not (email and name):
+        # If missing essentials, try /userinfo
+        if not (email and full_name):
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     r = await client.get(
                         f"https://{auth0_domain}/userinfo",
                         headers={"Authorization": f"Bearer {raw_token}"},
                     )
-                    if r.status_code == 200:
-                        info = r.json()
-                        email = email or info.get("email")
-                        name = name or info.get("name")
-                        picture = picture or info.get("picture")
+                if r.status_code == 200:
+                    info = r.json()
+                    email = email or info.get("email")
+                    given_name = given_name or info.get("given_name")
+                    family_name = family_name or info.get("family_name")
+                    full_name = full_name or info.get("name")
+                    picture = picture or info.get("picture")
             except Exception:
-                # Don't fail login if userinfo fetch fails; proceed with what we have.
-                pass
+                pass  # don’t fail login if userinfo fetch fails
 
+        if not email:
+            # Your model requires email (nullable=False); fail cleanly if we still don't have it
+            raise HTTPException(status_code=400, detail="User email is required")
+
+        # Create user with correct field names
         user = User(
             auth0_id=auth0_sub,
             email=email,
-            name=name,
-            picture=picture,
+            name=full_name,
+            surname=family_name,
+            img=picture,
         )
         db.add(user)
         await db.commit()
