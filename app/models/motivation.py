@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, Date, ForeignKey, Text
+from sqlalchemy import Column, Date, ForeignKey, Integer, Text
 from sqlalchemy.orm import relationship
-from app.db.base import TimestampMixin, Base
+
+from app.db.base import Base, TimestampMixin
 
 
 class DailyMotivation(TimestampMixin, Base):
@@ -18,4 +19,5 @@ class DailyMotivation(TimestampMixin, Base):
     ideas = Column(Text, nullable=False)
     recommendations = Column(Text, nullable=True)
 
+    user = relationship("User", back_populates="daily_motivations")
     user = relationship("User", back_populates="daily_motivations")

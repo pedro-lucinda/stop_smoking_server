@@ -80,7 +80,7 @@ def create_app() -> FastAPI:
 
     app.include_router(
         badges.router,
-        prefix=f"{settings.api_v1_str}/badge",
+        prefix=f"{settings.api_v1_str}/badges",
         tags=["badge"],
     )
 

@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from datetime import date as date_cls
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.dependencies.auth0 import get_current_user
@@ -15,20 +16,29 @@ router = APIRouter()
 async def list_cravings(
     skip: int = 0,
     limit: int = 100,
+    day: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(get_current_user),
 ) -> CravingListOut:
-    total = await db.scalar(
-        select(func.count(Craving.id)).where(Craving.user_id == current_user.id)
-    )
-    result = await db.execute(
-        select(Craving)
-        .where(Craving.user_id == current_user.id)
-        .offset(skip)
-        .limit(limit)
-    )
-    cravings = result.scalars().all()
-    return CravingListOut(cravings=cravings, total=total or 0)
+    q = select(Craving).where(Craving.user_id == current_user.id)
+
+    if day:
+        try:
+            d = date_cls.fromisoformat(day)
+        except ValueError:
+            raise HTTPException(422, detail="Invalid day. Use YYYY-MM-DD.")
+        q = q.where(Craving.date == d)
+
+    total = await db.scalar(select(func.count()).select_from(q.subquery()))
+    # Prefer created_at if TimestampMixin provides it; else fall back to id
+    order_cols = []
+    if hasattr(Craving, "created_at"):
+        order_cols.append(desc(Craving.created_at))
+    order_cols.append(desc(Craving.id))
+
+    result = await db.execute(q.order_by(*order_cols).offset(skip).limit(limit))
+    items = result.scalars().all()
+    return CravingListOut(cravings=items, total=total or 0)
 
 
 @router.get("/{craving_id}", response_model=CravingOut, status_code=status.HTTP_200_OK)
@@ -109,5 +119,7 @@ async def delete_craving(
 
     await db.delete(craving)
     await db.commit()
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from datetime import date as Date
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.dependencies.auth0 import get_current_user
 from app.api.v1.dependencies.db import get_async_db
@@ -13,23 +15,25 @@ router = APIRouter()
 
 @router.get("/", response_model=DiaryListOut, status_code=status.HTTP_200_OK)
 async def list_diary_entries(
+    date: Date | None = Query(default=None),  # YYYY-MM-DD
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(get_current_user),
 ) -> DiaryListOut:
-    total = await db.scalar(
-        select(func.count(Diary.id)).where(Diary.user_id == current_user.id)
-    )
-    result = await db.execute(
-        select(Diary)
-        .where(Diary.user_id == current_user.id)
-        .order_by(Diary.date.desc())
-        .offset(skip)
-        .limit(limit)
-    )
+    filters = [Diary.user_id == current_user.id]
+    if date is not None:
+        filters.append(Diary.date == date)
+
+    total = await db.scalar(select(func.count(Diary.id)).where(*filters)) or 0
+
+    stmt = select(Diary).where(*filters).order_by(Diary.date.desc())
+    if date is None:
+        stmt = stmt.offset(skip).limit(limit)
+
+    result = await db.execute(stmt)
     diaries = result.scalars().all()
-    return DiaryListOut(diaries=diaries, total=total or 0)
+    return DiaryListOut(diaries=diaries, total=total)
 
 
 @router.get("/{diary_id}", response_model=DiaryOut, status_code=status.HTTP_200_OK)
@@ -154,4 +158,5 @@ async def delete_diary_entry(
             detail="Diary entry is referenced by other records",
         ) from e
 
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
