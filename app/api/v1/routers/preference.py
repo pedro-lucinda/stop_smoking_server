@@ -2,7 +2,7 @@ from datetime import date
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -125,15 +125,16 @@ async def update_preferences(
     await db.commit()
     await db.refresh(pref)
 
-    # Remove today's old motivation and regenerate
-    today = date.today()
-    await db.execute(
-        delete(DailyMotivation).where(
-            DailyMotivation.user_id == current_user.id,
-            DailyMotivation.date == today,
+    if pref_in.quit_date and pref.quit_date != pref_in.quit_date:
+        # Remove today's old motivation and regenerate
+        today = date.today()
+        await db.execute(
+            delete(DailyMotivation).where(
+                DailyMotivation.user_id == current_user.id,
+                DailyMotivation.date == today,
+            )
         )
-    )
-    await db.commit()
+        await db.commit()
 
-    await generate_and_save_for_user(db=db, user_id=current_user.id)
+        await generate_and_save_for_user(db=db, user_id=current_user.id)
     return pref
