@@ -10,6 +10,7 @@ from app.api.v1.routers import (
     motivation,
     preference,
     user,
+    chat,
 )
 from app.core.config import settings
 from app.core.openapi import custom_openapi
@@ -51,6 +52,11 @@ def create_app() -> FastAPI:
         user.router,
         prefix=f"{settings.api_v1_str}/user",
         tags=["user"],
+    )
+    app.include_router(
+        chat.router,
+        prefix=f"{settings.api_v1_str}/chat",
+        tags=["chat"],
     )
     app.include_router(
         preference.router,

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -79,7 +79,7 @@ async def update_preferences(
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(get_current_user),
 ) -> PreferenceOut:
-    # Load current preference with goals
+    # Load current preference + goals
     res = await db.execute(
         select(Preference)
         .options(selectinload(Preference.goals))
@@ -87,17 +87,24 @@ async def update_preferences(
     )
     pref = res.scalar_one_or_none()
     if not pref:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Preferences not found"
-        )
+        raise HTTPException(status_code=404, detail="Preferences not found")
 
-    # Update scalar fields (except goals)
-    for field, value in pref_in.model_dump(
-        exclude_unset=True, exclude={"goals"}
-    ).items():
+    old_quit_date = pref.quit_date  # keep BEFORE mutation
+
+    # collect incoming scalar updates
+    updates = pref_in.model_dump(exclude_unset=True, exclude={"goals"})
+
+    # normalize incoming quit_date to date
+    if "quit_date" in updates and updates["quit_date"] is not None:
+        qd = updates["quit_date"]
+        if isinstance(qd, datetime):
+            updates["quit_date"] = qd.date()
+
+    # apply scalar fields
+    for field, value in updates.items():
         setattr(pref, field, value)
 
-    # Handle nested goals if provided
+    # goals update (unchanged)
     if pref_in.goals is not None:
         existing = {g.id: g for g in pref.goals if g.id is not None}
         new_list: List[Goal] = []
@@ -125,8 +132,8 @@ async def update_preferences(
     await db.commit()
     await db.refresh(pref)
 
-    if pref_in.quit_date and pref.quit_date != pref_in.quit_date:
-        # Remove today's old motivation and regenerate
+    # trigger only if client sent quit_date AND it changed
+    if "quit_date" in updates and old_quit_date != updates["quit_date"]:
         today = date.today()
         await db.execute(
             delete(DailyMotivation).where(
@@ -135,6 +142,6 @@ async def update_preferences(
             )
         )
         await db.commit()
-
         await generate_and_save_for_user(db=db, user_id=current_user.id)
+
     return pref
