@@ -31,7 +31,7 @@ async def create_badge(
     db: AsyncSession = Depends(get_async_db),
 ):
     badge = Badge(**badge_in.dict())
-    db.add(badge)  # add is sync; flush/commit does the I/O
+    db.add(badge)  
     try:
         await db.commit()
     except IntegrityError as e:
