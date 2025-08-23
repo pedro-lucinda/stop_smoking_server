@@ -8,7 +8,6 @@ from app.api.v1.dependencies.auth0 import get_current_user
 from app.schemas.chat import ChatIn, ThreadOut
 from app.services.ai.agent import agent
 from app.utils.ai import _event, _extract_text, _iter_tool_calls, _to_json, sse
-from app.prompts.chat import SYSTEM_POLICY
 
 router = APIRouter()
 
@@ -30,16 +29,15 @@ def chat_stream(
     Streams assistant output and tool activity as Server-Sent Events.
 
     Events:
-      - {"event":"tool_call","name":str,"args":dict}
-      - {"event":"token","text":str}
-      - {"event":"tool_result","name":str,"content":str}
+        - {"event":"tool_call","tool":str,"args":dict}
+        - {"event":"token","text":str}
+        - {"event":"tool_result","tool":str,"content":str}
     """
     cfg = {"configurable": {"thread_id": thread_id}}
 
     def gen() -> Generator[str, None, None]:
         stream = agent.stream(
             {"messages": [
-                 {"role": "system", "content": SYSTEM_POLICY},
                 {"role": "user", "content": payload.message}]},
             config=cfg,
             stream_mode="messages",
@@ -52,7 +50,7 @@ def chat_stream(
                 # tool calls requested by the assistant
                 for name, args in _iter_tool_calls(msg):
                     if name:
-                        yield _event(EVENT_TOOL_CALL, name=name, args=args)
+                        yield _event(EVENT_TOOL_CALL, tool=name, args=args)
 
                 # assistant token chunks
                 text = _extract_text(msg)
@@ -63,8 +61,7 @@ def chat_stream(
             # tool node produced a result
             content = getattr(msg, "content", None)
             if content is not None:
-                # normalize to string; avoid double-encoding
                 normalized = content if isinstance(content, str) else _to_json(content)
-                yield _event(EVENT_TOOL_RESULT, name=node, content=normalized)
+                yield _event(EVENT_TOOL_RESULT, tool=node, content=normalized)
 
     return sse(gen())
