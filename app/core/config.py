@@ -50,7 +50,10 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str = Field(..., env="OPENAI_API_KEY")
     langgraph_database_url: str = Field(..., env="LANGGRAPH_DATABASE_URL")
-
+    
+    # Tavily Search API
+    tavily_api_key: str = Field(..., env="TAVILY_API_KEY")
+    
     # Scheduler timezone
     timezone: str = Field("America/Sao_Paulo", env="TIMEZONE")
 

@@ -6,9 +6,10 @@ based on days since smoking cessation.
 import math
 
 
-def _assert_non_negative(days_since_quit: int):
+def _assert_non_negative(days_since_quit: int) -> int:
     if days_since_quit < 0:
         return 0
+    return days_since_quit
 
 
 def calculate_nicotine_expelled(days_since_quit: int) -> int:

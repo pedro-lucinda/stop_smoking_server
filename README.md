@@ -6,18 +6,18 @@ API for a quit-smoking app built with **FastAPI**, **SQLAlchemy 2.0 (async)**, a
 
 # 🚀 Project Overview
 
-* **Language & Framework:** Python 3.11, FastAPI
-* **DB & ORM:** PostgreSQL · SQLAlchemy 2.0 **async** (`AsyncSession`) · Alembic
-* **Driver:** `asyncpg`
-* **Auth:** Auth0 (OAuth2 Authorization Code + PKCE, RS256)
-* **Background jobs:** APScheduler (separate container)
-* **AI (optional):** OpenAI for daily motivation text
-* **Containers:** Docker + Docker Compose
+- **Language & Framework:** Python 3.11, FastAPI
+- **DB & ORM:** PostgreSQL · SQLAlchemy 2.0 **async** (`AsyncSession`) · Alembic
+- **Driver:** `asyncpg`
+- **Auth:** Auth0 (OAuth2 Authorization Code + PKCE, RS256)
+- **Background jobs:** APScheduler (separate container)
+- **AI:** OpenAI for daily motivation text + **Custom LangGraph Agent** for personalized coaching
+- **Containers:** Docker + Docker Compose
 
 # 📦 Prerequisites
 
-* Docker & Docker Compose (v2)
-* (Optional) Python 3.11 + virtualenv for local, non-Docker runs
+- Docker & Docker Compose (v2)
+- (Optional) Python 3.11 + virtualenv for local, non-Docker runs
 
 # ⚙️ Setup & Run (Docker)
 
@@ -49,12 +49,17 @@ AUTH0_MGMT_CLIENT_SECRET=YourMgmtClientSecret
 # OpenAI (needed for motivation generation)
 OPENAI_API_KEY=sk-...
 
+# Tavily Search API (needed for agent search capabilities)
+TAVILY_API_KEY=tvly-...
+
+# LangGraph Database (for agent conversation memory)
+LANGGRAPH_DATABASE_URL=postgresql://postgres:example@db:5432/langgraph
+
 # Scheduler / timezone
 TIMEZONE=UTC
 # If you ever run the scheduler inside the API process (dev only)
 SCHEDULER_ENABLED=false
 ```
-
 
 3. **Build & start**
 
@@ -78,19 +83,20 @@ http://localhost:8000/api/v1/docs
 
 1. **Create API**
 
-   * Auth0 → **APIs** → *Create API*
-   * **Identifier:** `https://api.myapp.com` (must match `AUTH0_API_AUDIENCE`)
-   * **Signing Algorithm:** RS256
+   - Auth0 → **APIs** → _Create API_
+   - **Identifier:** `https://api.myapp.com` (must match `AUTH0_API_AUDIENCE`)
+   - **Signing Algorithm:** RS256
 
 2. **Create Application**
 
-   * Auth0 → **Applications** → *Create Application* → SPA or Regular Web App
-   * **Allowed Callback URLs:**
+   - Auth0 → **Applications** → _Create Application_ → SPA or Regular Web App
+   - **Allowed Callback URLs:**
 
      ```
      http://localhost:8000/api/v1/docs/oauth2-redirect
      ```
-   * **Allowed Web Origins / Logout URLs:**
+
+   - **Allowed Web Origins / Logout URLs:**
 
      ```
      http://localhost:8000
@@ -98,10 +104,10 @@ http://localhost:8000/api/v1/docs
 
 3. **Permissions / Scopes**
 
-   * OIDC scopes used for login in Swagger: `openid`, `profile`, `email`
-   * API permissions used by the backend (example):
+   - OIDC scopes used for login in Swagger: `openid`, `profile`, `email`
+   - API permissions used by the backend (example):
 
-     * `manage:badges` (for admin badge endpoints)
+     - `manage:badges` (for admin badge endpoints)
 
 # 🗂 Alembic Migrations
 
@@ -121,9 +127,9 @@ docker compose run --rm api alembic downgrade base
 
 # 🧭 Services (Compose)
 
-* **api** – FastAPI app (`uvicorn`)
-* **scheduler** – APScheduler runner (`python -m app.tasks.run_scheduler`)
-* **db** – PostgreSQL 15
+- **api** – FastAPI app (`uvicorn`)
+- **scheduler** – APScheduler runner (`python -m app.tasks.run_scheduler`)
+- **db** – PostgreSQL 15
 
 > Don’t scale the `scheduler` service beyond 1 replica unless you add a distributed lock.
 
@@ -131,39 +137,46 @@ docker compose run --rm api alembic downgrade base
 
 1. **Authorize in Swagger**
 
-   * Open `/api/v1/docs` → **Authorize** → complete Auth0 login (PKCE)
-   * Swagger will attach `Authorization: Bearer <token>` automatically
+   - Open `/api/v1/docs` → **Authorize** → complete Auth0 login (PKCE)
+   - Swagger will attach `Authorization: Bearer <token>` automatically
 
 2. **Secured routes**
 
-   * `/api/v1/preference`, `/api/v1/motivation`, `/api/v1/user`, etc.
-   * Some admin endpoints (e.g. `/api/v1/badge`) require `manage:badges`
+   - `/api/v1/preference`, `/api/v1/motivation`, `/api/v1/user`, etc.
+     - Some admin endpoints (e.g. `/api/v1/badge`) require `manage:badges`
 
 # 🧰 Development Notes
 
-* This codebase uses **SQLAlchemy async**. In handlers/services:
+- This codebase uses **SQLAlchemy async**. In handlers/services:
 
-  * Inject `AsyncSession`
-  * Use `select(...)` + `await db.execute(...)`
-  * `await db.commit()`, `await db.refresh(obj)`, `await db.delete(obj)`
-  * **Do not** access lazy relationships (e.g. `current_user.diaries`) — query explicitly or use `selectinload(...)`.
+  - Inject `AsyncSession`
+  - Use `select(...)` + `await db.execute(...)`
+  - `await db.commit()`, `await db.refresh(obj)`, `await db.delete(obj)`
+  - **Do not** access lazy relationships (e.g. `current_user.diaries`) — query explicitly or use `selectinload(...)`.
 
-* Background jobs:
+- Background jobs:
 
-  * Implemented in `app/tasks/*`
-  * The scheduler service registers:
+  - Implemented in `app/tasks/*`
+  - The scheduler service registers:
 
-    * Motivation generation **every 8 hours**
-    * Badge assignment **every 24 hours**
+    - Motivation generation **every 8 hours**
+    - Badge assignment **every 24 hours**
+
+- **Custom LangGraph Agent**:
+
+  - Provides personalized coaching based on user's quit data
+  - Integrates with user preferences and progress
+  - Uses domain-specific tools for smoking cessation
+  - Maintains conversation context across sessions
 
 # 🛡 Security & Best Practices
 
-* Secrets via Pydantic Settings (`.env`)
-* RS256 validation against Auth0 JWKS
-* HTTPS in production (terminate TLS at the proxy)
-* Rate limiting recommended (e.g. `slowapi`)
-* Structured logging with request IDs
-* DB uniqueness constraints for critical invariants (e.g., one diary entry per user per day)
+- Secrets via Pydantic Settings (`.env`)
+- RS256 validation against Auth0 JWKS
+- HTTPS in production (terminate TLS at the proxy)
+- Rate limiting recommended (e.g. `slowapi`)
+- Structured logging with request IDs
+- DB uniqueness constraints for critical invariants (e.g., one diary entry per user per day)
 
 # 🧪 Smoke Tests (quick)
 
@@ -171,12 +184,16 @@ docker compose run --rm api alembic downgrade base
 # API is up
 curl -s http://localhost:8000/api/v1/openapi.json | head -n 2
 
-# Healthcheck (if you add one)
-# curl -i http://localhost:8000/api/v1/healthcheck
+# Healthcheck
+curl -i http://localhost:8000/api/v1/healthcheck
+
+# Agent health
+curl -i http://localhost:8000/api/v1/agent-health
 ```
 
 # 🐞 Troubleshooting
 
-* **`MissingGreenlet`**: You triggered an async lazy-load. Don’t do `user.relationship` directly. Query with `select(...)` and `join/selectinload`.
-* **`asyncpg` not found**: Add `asyncpg` to `requirements.txt`, rebuild with `--no-cache`.
-* **Deletes do nothing**: With `AsyncSession`, use `await db.delete(obj)` then `await db.commit()`.
+- **`MissingGreenlet`**: You triggered an async lazy-load. Don't do `user.relationship` directly. Query with `select(...)` and `join/selectinload`.
+- **`asyncpg` not found**: Add `asyncpg` to `requirements.txt`, rebuild with `--no-cache`.
+- **Deletes do nothing**: With `AsyncSession`, use `await db.delete(obj)` then `await db.commit()`.
+- **Agent not available**: Check if `TAVILY_API_KEY` and `LANGGRAPH_DATABASE_URL` are set in `.env`
