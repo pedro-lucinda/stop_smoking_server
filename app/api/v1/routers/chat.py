@@ -4,10 +4,12 @@ from uuid import uuid4
 from datetime import date
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, status
+from fastapi import Security
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.dependencies.auth0 import get_current_user
+from app.api.v1.dependencies.auth0 import oauth2_scheme
 from app.api.v1.dependencies.db import get_async_db
 from app.models.preference import Preference
 from app.models.user import User
@@ -38,6 +40,7 @@ async def chat_stream(
     payload: ChatIn = Body(...),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
+    raw_token: str = Security(oauth2_scheme),
 ):
     """
     Streams assistant output and tool activity as Server-Sent Events.
@@ -93,6 +96,8 @@ async def chat_stream(
                     "quit_reason": user_context.get("quit_reason"),
                     "cigarettes_per_day": user_context.get("cigarettes_per_day"),
                 })
+            # Provide bearer token for API-backed tools (never echo it)
+            initial_state["auth_token"] = raw_token
 
             stream = agent.stream(
                 initial_state,
