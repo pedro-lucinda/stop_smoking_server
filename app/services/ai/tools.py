@@ -2,7 +2,6 @@ import logging
 from typing import List, Optional, Dict, Any
 from datetime import date, datetime, timedelta
 from collections import Counter
-import asyncio
 
 from langchain_tavily import TavilySearch
 from langchain_core.tools import BaseTool, tool
@@ -26,6 +25,28 @@ except Exception as e:
     logger.error(f"Failed to initialize Tavily search: {e}")
     search = None
 
+# Academic paper search tool - focused on smoking cessation research
+try:
+    academic_search = TavilySearch(
+        max_results=5,
+        include_domains=[
+            "pubmed.ncbi.nlm.nih.gov",
+            "ncbi.nlm.nih.gov", 
+            "bmj.com",
+            "nejm.org",
+            "thelancet.com",
+            "jama.jamanetwork.com",
+            "cochranelibrary.com",
+            "who.int",
+            "cdc.gov",
+            "researchgate.net"
+        ]
+    )
+    logger.info("Tavily academic search tool initialized for smoking cessation research")
+except Exception as e:
+    logger.error(f"Failed to initialize Tavily academic search: {e}")
+    academic_search = None
+
 # Create async engine for tools
 async_engine = create_async_engine(settings.database_url, pool_pre_ping=True)
 AsyncSessionLocal = async_sessionmaker(async_engine, expire_on_commit=False)
@@ -45,6 +66,7 @@ def calculate_health_improvements(quit_date: str, cigarettes_per_day: Optional[i
       - cigarettes_per_day: optional, to estimate money/time benefits
     """
     try:
+        print("quit_date", quit_date)
         quit_dt = datetime.strptime(quit_date, "%Y-%m-%d").date()
     except Exception:
         return "Invalid quit_date. Use format YYYY-MM-DD."
@@ -93,298 +115,182 @@ def calculate_health_improvements(quit_date: str, cigarettes_per_day: Optional[i
 
     return "\n".join(lines)
 
-# ---------- New Tools ----------
 
 @tool
-def detect_triggers_from_cravings(cravings: Optional[List[Dict[str, Any]]] = None, top_n: int = 3, window_days: Optional[int] = None) -> str:
+def search_smoking_cessation_research(query: str) -> str:
     """
-    Analyze recent cravings and return top triggers.
-    Input: cravings list (items may include: date, time, activity, company, feeling),
-           optional top_n (default 3), optional window_days to filter recent items.
-    Output: ranked triggers for activity, company, time-of-day, feelings, with brief tips.
+    Search for academic papers and research studies specifically about smoking cessation, tobacco control, 
+    and related health topics from reliable medical and scientific sources.
+    
+    This tool searches through trusted medical databases and journals including PubMed, BMJ, NEJM, 
+    The Lancet, JAMA, Cochrane Library, WHO, and CDC for evidence-based research.
+    
+    Args:
+        query: Search query related to smoking cessation (e.g., "nicotine replacement therapy", 
+               "behavioral interventions", "withdrawal symptoms", "relapse prevention")
+    
+    Returns:
+        String containing relevant academic research findings from trusted medical sources
     """
-    if not cravings:
-        return (
-            "No cravings provided to analyze. Please share a few recent entries as a JSON array, e.g.:\n"
-            "[{\"date\": \"2025-01-22\", \"time\": \"14:30\", \"activity\": \"after lunch\", \"company\": \"coworkers\", \"feeling\": \"stressed\"}, ...]"
-        )
-
-    # Optional window filter by date field (YYYY-MM-DD)
-    filtered = cravings
-    if window_days is not None and window_days > 0:
-        try:
-            cutoff = date.today().toordinal() - window_days
-            def _keep(item: Dict[str, Any]) -> bool:
-                d = item.get("date") or item.get("day")
-                if not d:
-                    return True
-                try:
-                    dt = datetime.fromisoformat(str(d)).date()
-                    return dt.toordinal() >= cutoff
-                except Exception:
-                    return True
-            filtered = [c for c in cravings if _keep(c)]
-        except Exception:
-            filtered = cravings
-
-    def bucket_time(t: Optional[str]) -> Optional[str]:
-        if not t:
-            return None
-        try:
-            hh = int(str(t)[:2])
-        except Exception:
-            return None
-        if 5 <= hh < 12:
-            return "morning"
-        if 12 <= hh < 17:
-            return "afternoon"
-        if 17 <= hh < 22:
-            return "evening"
-        return "night"
-
-    counts = {
-        "activity": Counter(),
-        "company": Counter(),
-        "time": Counter(),
-        "feeling": Counter(),
-    }
-
-    for c in filtered:
-        if c.get("activity"):
-            counts["activity"][str(c.get("activity")).strip().lower()] += 1
-        if c.get("company"):
-            counts["company"][str(c.get("company")).strip().lower()] += 1
-        if c.get("feeling"):
-            counts["feeling"][str(c.get("feeling")).strip().lower()] += 1
-        # naive time extraction from optional time or datetime
-        t = c.get("time") or c.get("datetime") or c.get("created_at")
-        bucket = bucket_time(str(t)[11:13] if t else None)  # expects HH from ISO
-        if bucket:
-            counts["time"][bucket] += 1
-
-    def top(counter: Counter) -> List[str]:
-        return [f"{k} ({v})" for k, v in counter.most_common(top_n) if k]
-
-    lines: List[str] = []
-    lines.append("Top triggers (counts in parentheses):")
-    lines.append(f"- Activity: {', '.join(top(counts['activity'])) or 'n/a'}")
-    lines.append(f"- Company: {', '.join(top(counts['company'])) or 'n/a'}")
-    lines.append(f"- Time of day: {', '.join(top(counts['time'])) or 'n/a'}")
-    lines.append(f"- Feelings: {', '.join(top(counts['feeling'])) or 'n/a'}")
-
-    tips: Dict[str, str] = {
-        "morning": "Prepare a morning routine (water + 2-min breath) before triggers.",
-        "afternoon": "Schedule a 5-min walk after lunch to reset.",
-        "evening": "Replace late snacks with herbal tea; plan a wind-down routine.",
-        "night": "Practice 4-7-8 breathing before bed; avoid caffeine late.",
-    }
-    suggested = []
-    for tod, _ in counts["time"].most_common(1):
-        if tod in tips:
-            suggested.append(f"For {tod}: {tips[tod]}")
-    if counts["activity"]:
-        act, _ = counts["activity"].most_common(1)[0]
-        suggested.append(f"When {act}: pre-plan a 5-minute alternative (stretch, water, quick text).")
-    if suggested:
-        lines.append("Suggestions:")
-        lines.extend([f"- {s}" for s in suggested])
-
-    return "\n".join(lines)
-
-async def _fetch_cravings_async(user_id: int, window_days: int) -> List[Dict[str, Any]]:
-    """Async helper to fetch cravings from database."""
-    async with AsyncSessionLocal() as session:
-        cutoff = date.today() - timedelta(days=max(window_days, 1))
-        stmt = select(Craving).where(Craving.user_id == user_id)
-        try:
-            stmt = stmt.where(Craving.date >= cutoff)
-        except Exception:
-            pass
-        rows = (await session.execute(stmt)).scalars().all()
-        
-        cravings = []
-        for r in rows:
-            cravings.append({
-                "date": getattr(r, "date", None),
-                "time": None,
-                "activity": getattr(r, "activity", None),
-                "company": getattr(r, "company", None),
-                "feeling": getattr(r, "feeling", None),
-            })
-        return cravings
-
-@tool
-def detect_triggers_from_db(user_id: int, window_days: int = 14, top_n: int = 3) -> str:
-    """
-    Fetch user's recent cravings directly from the database and detect top triggers.
-    Inputs: user_id (int), window_days (default 14), top_n (default 3)
-    Output: ranked triggers with brief tips (same format as detect_triggers_from_cravings).
-    """
+    if not academic_search:
+        return "Academic search tool is not available."
+    
     try:
-        # Run async function in sync context
-        cravings = asyncio.run(_fetch_cravings_async(user_id, window_days))
-        # Reuse analysis function
-        return detect_triggers_from_cravings.invoke({
-            "cravings": cravings,
-            "top_n": top_n,
-            "window_days": window_days,
-        })
-    except Exception as e:
-        logger.error(f"detect_triggers_from_db failed: {e}")
-        return "Could not analyze cravings from the database right now. Please try again later."
-
-async def _fetch_user_preferences_async(user_id: int) -> Optional[Preference]:
-    """Async helper to fetch user preferences from database."""
-    async with AsyncSessionLocal() as session:
-        stmt = select(Preference).where(Preference.user_id == user_id)
-        result = await session.execute(stmt)
-        return result.scalar_one_or_none()
-
-@tool
-def get_user_savings_data(user_id: int) -> str:
-    """
-    Fetch user's quit data and calculate money/time saved since quitting.
-    Input: user_id (int)
-    Output: comprehensive savings breakdown including money saved, time regained, and health benefits.
-    """
-    try:
-        # Run async function in sync context
-        pref = asyncio.run(_fetch_user_preferences_async(user_id))
-        
-        if not pref:
-            return "No quit data found. Please set up your preferences first."
-        
-        quit_date = pref.quit_date
-        cig_per_day = pref.cig_per_day or 0
-        cig_price = pref.cig_price or 0
-        
-        days = (date.today() - quit_date).days
-        if days < 0:
-            return f"Your quit date is in the future ({-days} days from now)."
-        
-        # Calculate savings
-        money_saved = days * cig_per_day * max(cig_price, 0)
-        minutes_per_cigarette = 20
-        hours_saved = (days * cig_per_day * minutes_per_cigarette) / 60.0
-        
-        # Get health improvements
-        nicotine_expelled = health_calc.calculate_nicotine_expelled(days)
-        carbon_monoxide = health_calc.calculate_carbon_monoxide_level(days)
-        life_hours = health_calc.calculate_life_regained_in_hours(days)
-        
-        lines = [
-            f"💰 **Financial Savings**",
-            f"Days since quit: {days}",
-            f"Previous consumption: {cig_per_day} cigarettes/day",
-            f"Price per cigarette: ${cig_price:.2f}",
-            f"Money saved: ${money_saved:.2f}",
-            "",
-            f"⏰ **Time Regained**",
-            f"Hours of life regained: {life_hours:.1f} hours",
-            f"Time not spent smoking: {hours_saved:.1f} hours",
-            "",
-            f"🏥 **Health Progress**",
-            f"Nicotine expelled: {nicotine_expelled}%",
-            f"Carbon monoxide normalized: {carbon_monoxide}%",
+        # Focus the search specifically on smoking cessation and tobacco control
+        smoking_keywords = [
+            "smoking cessation", "tobacco control", "nicotine addiction", 
+            "smoking quit", "tobacco cessation", "nicotine withdrawal"
         ]
         
-        # Add motivational milestones
-        if days >= 1:
-            lines.append(f"🎉 You've been smoke-free for {days} days!")
-        if days >= 7:
-            lines.append("🌟 One week milestone reached!")
-        if days >= 30:
-            lines.append("🏆 One month milestone reached!")
-        if days >= 90:
-            lines.append("💪 Three months - your risk of heart disease is decreasing!")
+        # Create a focused query that combines the user's query with smoking cessation context
+        focused_query = f"({' OR '.join(smoking_keywords)}) AND {query}"
         
-        return "\n".join(lines)
+        results = academic_search.invoke(focused_query)
         
+        if not results:
+            return f"No smoking cessation research found for: {query}"
+        
+        return f"Smoking cessation research results for '{query}':\n\n{results}"
     except Exception as e:
-        logger.error(f"get_user_savings_data failed: {e}")
-        return "Could not fetch your savings data right now. Please try again later."
+        logger.error(f"Error searching smoking cessation research: {e}")
+        return f"Error searching academic research: {str(e)}"
+
+
+class UserContextTool:
+    """Simple synchronous user context access."""
+    def __init__(self):
+        self.current_user_id = None
+        self.current_context = {}
+    
+    def set_context(self, user_id: str, context: dict):
+        """Set the current user context."""
+        self.current_user_id = user_id
+        self.current_context = context
+    
+    def get_context(self) -> dict:
+        """Get the current user context."""
+        return self.current_context
+
+# Global instance to share context between requests
+user_context_tool = UserContextTool()
+
 
 @tool
-def savings_estimator(quit_date: str, cig_per_day: int, cig_price: float) -> str:
+def get_user_cravings() -> str:
     """
-    Estimate money and time saved since quitting.
-    Inputs: quit_date (YYYY-MM-DD), cig_per_day (int), cig_price (price per cigarette).
-    Output: money_saved (currency), hours_saved (float).
+    Get the current user's recent craving episodes with full details including dates, 
+    intensity, triggers, and outcomes. Always use this tool when asked about cravings.
+    
+    Returns:
+        Detailed information about the user's recent craving episodes
     """
-    try:
-        quit_dt = datetime.strptime(quit_date, "%Y-%m-%d").date()
-    except Exception:
-        return "Invalid quit_date. Use format YYYY-MM-DD."
-
-    days = (date.today() - quit_dt).days
-    if days < 0:
-        return f"Your quit date is in the future ({-days} days)."
-
-    money_saved = days * cig_per_day * max(cig_price, 0)
-    minutes_per_cigarette = 20
-    hours_saved = (days * cig_per_day * minutes_per_cigarette) / 60.0
-    return (
-        f"Days since quit: {days}\n"
-        f"Estimated money saved: {money_saved:.2f}\n"
-        f"Estimated life/time regained: {hours_saved:.1f} hours"
-    )
-
-@tool
-def goal_coach(context: Optional[str] = None, triggers: Optional[List[str]] = None) -> str:
-    """
-    Suggest 2–3 SMART goals tailored to user's context/triggers. Pure coaching utility.
-    Inputs: context (free text), triggers (list of strings)
-    Output: short SMART goals + first tiny action.
-    """
-    ctx = (context or "").strip()
-    trig = ", ".join(triggers or [])
-    goals: List[str] = []
-
-    base = "This week"
-    goals.append(f"{base}, replace one smoking trigger with a 2-minute breathing break after each meal (Mon–Fri). Measure: 5/5 days.")
-    goals.append(f"{base}, walk 10 minutes after lunch on 4 days. Measure: 4/4.")
-    if trig:
-        goals.append(f"{base}, prepare an IF-THEN plan for top trigger ({trig}). e.g., IF urge after coffee THEN drink water + 4-7-8 for 2 min.")
-    else:
-        goals.append(f"{base}, prepare an IF-THEN plan for your top trigger. Write it down and practice once daily.")
-
-    next_step = "Next step: pick one goal, schedule it on your calendar, and set a reminder."
-    header = f"Context: {ctx}" if ctx else ""
-    lines = [l for l in [header] if l]
-    lines.append("SMART goals:")
-    for i, g in enumerate(goals[:3], 1):
-        lines.append(f"{i}. {g}")
-    lines.append(next_step)
-    return "\n".join(lines)
-
-@tool
-def evidence_lookup(query: str) -> str:
-    """
-    Look up recent, reputable sources for a cessation-related question.
-    Returns 3 concise bullets with title + source + link.
-    """
-    if not search:
-        return "Search is not configured. Please set TAVILY_API_KEY."
-    try:
-        res = search.invoke({"query": query})
-        items = []
-        if isinstance(res, dict) and "results" in res:
-            items = res["results"]
-        elif isinstance(res, list):
-            items = res
+    context = user_context_tool.get_context()
+    cravings = context.get("recent_cravings", [])
+    
+    if not cravings:
+        return "No recent craving episodes found. The user may not have logged any cravings yet."
+    
+    details = [f"Recent Craving Episodes ({len(cravings)} total):"]
+    
+    for i, craving in enumerate(cravings, 1):
+        episode = [f"\nEpisode {i}:"]
+        episode.append(f"  Date: {craving.get('date', 'Unknown')}")
+        episode.append(f"  Intensity: {craving.get('desire_range', 0)}/10")
+        
+        if craving.get("feeling"):
+            episode.append(f"  Feelings: {craving['feeling']}")
+        if craving.get("activity"):
+            episode.append(f"  Activity: {craving['activity']}")
+        if craving.get("company"):
+            episode.append(f"  Company: {craving['company']}")
+        if craving.get("comments"):
+            episode.append(f"  Notes: {craving['comments']}")
+        
+        if craving.get("have_smoked"):
+            cigarettes = craving.get('number_of_cigarets_smoked', 0)
+            episode.append(f"  Outcome: RELAPSED - smoked {cigarettes} cigarettes")
         else:
-            items = [res]
-        bullets: List[str] = []
-        for it in items[:3]:
-            title = it.get("title") if isinstance(it, dict) else str(it)
-            url = it.get("url") if isinstance(it, dict) else ""
-            source = it.get("source") or it.get("domain") or ""
-            bullet = f"• {title} — {source} {url}"
-            bullets.append(bullet)
-        return "\n".join(bullets) if bullets else "No results found."
-    except Exception as e:
-        logger.error(f"Evidence lookup failed: {e}")
-        return "Search failed. Please try again later."
+            episode.append("  Outcome: Successfully resisted")
+        
+        details.extend(episode)
+    
+    return "\n".join(details)
+
+
+@tool
+def get_user_diary() -> str:
+    """
+    Get the current user's recent diary entries with daily summaries including 
+    craving levels and outcomes. Always use this tool when asked about diary entries.
+    
+    Returns:
+        Detailed information about the user's recent diary entries
+    """
+    context = user_context_tool.get_context()
+    entries = context.get("recent_diary_entries", [])
+    
+    if not entries:
+        return "No recent diary entries found. The user may not have made any diary entries yet."
+    
+    details = [f"Recent Diary Entries ({len(entries)} total):"]
+    
+    for i, entry in enumerate(entries, 1):
+        day = [f"\nDay {i}:"]
+        day.append(f"  Date: {entry.get('date', 'Unknown')}")
+        day.append(f"  Daily Craving Level: {entry.get('craving_range', 0)}/10")
+        
+        craving_count = entry.get("number_of_cravings", 0)
+        if craving_count > 0:
+            day.append(f"  Number of Cravings: {craving_count}")
+        
+        if entry.get("have_smoked"):
+            cigarettes = entry.get('number_of_cigarets_smoked', 0)
+            day.append(f"  Outcome: RELAPSED - smoked {cigarettes} cigarettes")
+        else:
+            day.append("  Outcome: Stayed smoke-free")
+        
+        if entry.get("notes"):
+            day.append(f"  Notes: {entry['notes']}")
+        
+        details.extend(day)
+    
+    return "\n".join(details)
+
+
+@tool  
+def get_user_progress() -> str:
+    """
+    Get the current user's overall progress including quit date, goals, and timeline.
+    
+    Returns:
+        Summary of the user's smoking cessation progress
+    """
+    context = user_context_tool.get_context()
+    
+    if not context:
+        return "No user progress data available. The user may need to set up their preferences."
+    
+    progress = ["User Progress Summary:"]
+    
+    if context.get("quit_date"):
+        progress.append(f"  Quit Date: {context['quit_date']}")
+    if context.get("days_since_quit"):
+        progress.append(f"  Days Smoke-Free: {context['days_since_quit']}")
+    if context.get("quit_reason"):
+        progress.append(f"  Quit Reason: {context['quit_reason']}")
+    
+    goals = context.get("goals", [])
+    if goals:
+        completed = [g['description'] for g in goals if g.get("is_completed")]
+        pending = [g['description'] for g in goals if not g.get("is_completed")]
+        
+        if completed:
+            progress.append(f"  Completed Goals: {', '.join(completed)}")
+        if pending:
+            progress.append(f"  Current Goals: {', '.join(pending)}")
+    
+    return "\n".join(progress)
+
 
 # Compile tools list with error handling
 TOOLS: List[BaseTool] = []
@@ -394,12 +300,10 @@ if search:
 
 TOOLS.extend([
     calculate_health_improvements,
-    detect_triggers_from_cravings,
-    detect_triggers_from_db,
-    get_user_savings_data,
-    savings_estimator,
-    goal_coach,
-    evidence_lookup,
+    search_smoking_cessation_research,
+    get_user_cravings,
+    get_user_diary,
+    get_user_progress,
 ])
 
 logger.info(f"Initialized {len(TOOLS)} tools for the agent")
