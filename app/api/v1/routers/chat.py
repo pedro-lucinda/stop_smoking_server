@@ -223,23 +223,7 @@ async def chat_stream(
         try:
             # PRE-PROCESSING: Check for obvious non-smoking questions
             message_lower = payload.message.lower().strip()
-            obvious_non_smoking = [
-                "capital of", "what is the capital", "capital city",
-                "who invented", "when was", "how to cook", "recipe for",
-                "what is the weather", "temperature", "forecast",
-                "what country", "where is", "population of"
-            ]
-            
-            # Check if it's an obvious non-smoking question
-            for pattern in obvious_non_smoking:
-                if pattern in message_lower:
-                    # Double-check it's not about smoking
-                    smoking_keywords = ["smok", "tobacco", "nicotine", "cigarette", "quit", "cessation", "craving"]
-                    if not any(keyword in message_lower for keyword in smoking_keywords):
-                        logger.info(f"Caught obvious non-smoking question: {payload.message[:50]}...")
-                        refusal = _get_smoking_refusal_response()
-                        yield _event(EVENT_TOKEN, text=refusal)
-                        return
+           
             
             # Build structured initial state for the custom agent
             initial_state = {
