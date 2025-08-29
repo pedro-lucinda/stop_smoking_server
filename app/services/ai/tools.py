@@ -1,13 +1,19 @@
 import logging
-from typing import List, Optional
-from datetime import date, datetime
+from typing import List, Optional, Dict, Any
+from datetime import date, datetime, timedelta
+from collections import Counter
 
 from langchain_tavily import TavilySearch
 from langchain_core.tools import BaseTool, tool
 from pydantic import BaseModel, Field
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from app.core.config import settings
 from app.core import health as health_calc
+from app.models.craving import Craving
+from app.models.preference import Preference
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +24,32 @@ try:
 except Exception as e:
     logger.error(f"Failed to initialize Tavily search: {e}")
     search = None
+
+# Academic paper search tool - focused on smoking cessation research
+try:
+    academic_search = TavilySearch(
+        max_results=5,
+        include_domains=[
+            "pubmed.ncbi.nlm.nih.gov",
+            "ncbi.nlm.nih.gov", 
+            "bmj.com",
+            "nejm.org",
+            "thelancet.com",
+            "jama.jamanetwork.com",
+            "cochranelibrary.com",
+            "who.int",
+            "cdc.gov",
+            "researchgate.net"
+        ]
+    )
+    logger.info("Tavily academic search tool initialized for smoking cessation research")
+except Exception as e:
+    logger.error(f"Failed to initialize Tavily academic search: {e}")
+    academic_search = None
+
+# Create async engine for tools
+async_engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+AsyncSessionLocal = async_sessionmaker(async_engine, expire_on_commit=False)
 
 # Domain-specific tools for smoking cessation
 
@@ -34,6 +66,7 @@ def calculate_health_improvements(quit_date: str, cigarettes_per_day: Optional[i
       - cigarettes_per_day: optional, to estimate money/time benefits
     """
     try:
+        print("quit_date", quit_date)
         quit_dt = datetime.strptime(quit_date, "%Y-%m-%d").date()
     except Exception:
         return "Invalid quit_date. Use format YYYY-MM-DD."
@@ -76,96 +109,188 @@ def calculate_health_improvements(quit_date: str, cigarettes_per_day: Optional[i
     ]
 
     if cigarettes_per_day is not None and cigarettes_per_day >= 0:
-        # Reuse the same assumption as API (20 min per cigarette)
         minutes_per_cigarette = 20
         minutes_saved = days_since_quit * cigarettes_per_day * minutes_per_cigarette
         lines.append(f"Estimated minutes not smoked: {minutes_saved}")
 
     return "\n".join(lines)
 
-@tool
-def get_craving_management_tips() -> str:
-    """
-    Provide evidence-based tips for managing nicotine cravings.
-    Use this when users ask about handling cravings or withdrawal symptoms.
-    """
-    return """Here are proven strategies to manage cravings:
-
-**Immediate Relief (5-10 minutes):**
-• Deep breathing exercises (4-7-8 technique)
-• Drink cold water or herbal tea
-• Take a short walk or stretch
-• Use stress balls or fidget toys
-
-**Medium-term Strategies:**
-• Identify and avoid triggers
-• Practice mindfulness meditation
-• Use nicotine replacement therapy (consult doctor)
-• Stay hydrated and eat regular meals
-
-**Long-term Support:**
-• Join support groups or counseling
-• Exercise regularly
-• Get adequate sleep
-• Reward yourself for milestones
-
-**Emergency Plan:**
-1. Stop and breathe deeply
-2. Drink water
-3. Call a support person
-4. Remember your reasons for quitting
-5. Distract yourself with an activity
-
-Remember: Cravings typically last 3-5 minutes and will get easier over time."""
 
 @tool
-def get_relapse_prevention_strategies() -> str:
+def search_smoking_cessation_research(query: str) -> str:
     """
-    Provide strategies to prevent relapse and maintain long-term abstinence.
-    Use this when users ask about staying smoke-free or avoiding relapse.
+    Search for academic papers and research studies specifically about smoking cessation, tobacco control, 
+    and related health topics from reliable medical and scientific sources.
+    
+    This tool searches through trusted medical databases and journals including PubMed, BMJ, NEJM, 
+    The Lancet, JAMA, Cochrane Library, WHO, and CDC for evidence-based research.
+    
+    Args:
+        query: Search query related to smoking cessation (e.g., "nicotine replacement therapy", 
+               "behavioral interventions", "withdrawal symptoms", "relapse prevention")
+    
+    Returns:
+        String containing relevant academic research findings from trusted medical sources
     """
-    return """**Relapse Prevention Strategies:**
+    if not academic_search:
+        return "Academic search tool is not available."
+    
+    try:
+        # Focus the search specifically on smoking cessation and tobacco control
+        smoking_keywords = [
+            "smoking cessation", "tobacco control", "nicotine addiction", 
+            "smoking quit", "tobacco cessation", "nicotine withdrawal"
+        ]
+        
+        # Create a focused query that combines the user's query with smoking cessation context
+        focused_query = f"({' OR '.join(smoking_keywords)}) AND {query}"
+        
+        results = academic_search.invoke(focused_query)
+        
+        if not results:
+            return f"No smoking cessation research found for: {query}"
+        
+        return f"Smoking cessation research results for '{query}':\n\n{results}"
+    except Exception as e:
+        logger.error(f"Error searching smoking cessation research: {e}")
+        return f"Error searching academic research: {str(e)}"
 
-**1. Identify High-Risk Situations:**
-• Social gatherings with smokers
-• Stressful work situations
-• After meals or with coffee
-• Driving or commuting
-• Alcohol consumption
 
-**2. Develop Coping Skills:**
-• Practice saying "No, thank you" firmly
-• Have an exit strategy for triggering situations
-• Use stress management techniques
-• Keep healthy snacks available
+class UserContextTool:
+    """Simple synchronous user context access."""
+    def __init__(self):
+        self.current_user_id = None
+        self.current_context = {}
+    
+    def set_context(self, user_id: str, context: dict):
+        """Set the current user context."""
+        self.current_user_id = user_id
+        self.current_context = context
+    
+    def get_context(self) -> dict:
+        """Get the current user context."""
+        return self.current_context
 
-**3. Build a Support System:**
-• Tell friends and family about your quit journey
-• Join online or in-person support groups
-• Consider professional counseling
-• Use quit-smoking apps or hotlines
+# Global instance to share context between requests
+user_context_tool = UserContextTool()
 
-**4. Create a Healthy Routine:**
-• Exercise regularly
-• Practice good sleep hygiene
-• Eat nutritious meals
-• Find new hobbies or activities
 
-**5. Monitor Your Progress:**
-• Track smoke-free days
-• Celebrate milestones
-• Reflect on benefits you've experienced
-• Keep a journal of your journey
+@tool
+def get_user_cravings() -> str:
+    """
+    Get the current user's recent craving episodes with full details including dates, 
+    intensity, triggers, and outcomes. Always use this tool when asked about cravings.
+    
+    Returns:
+        Detailed information about the user's recent craving episodes
+    """
+    context = user_context_tool.get_context()
+    cravings = context.get("recent_cravings", [])
+    
+    if not cravings:
+        return "No recent craving episodes found. The user may not have logged any cravings yet."
+    
+    details = [f"Recent Craving Episodes ({len(cravings)} total):"]
+    
+    for i, craving in enumerate(cravings, 1):
+        episode = [f"\nEpisode {i}:"]
+        episode.append(f"  Date: {craving.get('date', 'Unknown')}")
+        episode.append(f"  Intensity: {craving.get('desire_range', 0)}/10")
+        
+        if craving.get("feeling"):
+            episode.append(f"  Feelings: {craving['feeling']}")
+        if craving.get("activity"):
+            episode.append(f"  Activity: {craving['activity']}")
+        if craving.get("company"):
+            episode.append(f"  Company: {craving['company']}")
+        if craving.get("comments"):
+            episode.append(f"  Notes: {craving['comments']}")
+        
+        if craving.get("have_smoked"):
+            cigarettes = craving.get('number_of_cigarets_smoked', 0)
+            episode.append(f"  Outcome: RELAPSED - smoked {cigarettes} cigarettes")
+        else:
+            episode.append("  Outcome: Successfully resisted")
+        
+        details.extend(episode)
+    
+    return "\n".join(details)
 
-**6. Emergency Response Plan:**
-If you feel like smoking:
-1. Wait 10 minutes before acting
-2. Call a support person
-3. Use deep breathing
-4. Remember your reasons for quitting
-5. Distract yourself with an activity
 
-**Remember:** Relapse is not failure - it's part of the learning process. Most successful quitters attempt multiple times before succeeding permanently."""
+@tool
+def get_user_diary() -> str:
+    """
+    Get the current user's recent diary entries with daily summaries including 
+    craving levels and outcomes. Always use this tool when asked about diary entries.
+    
+    Returns:
+        Detailed information about the user's recent diary entries
+    """
+    context = user_context_tool.get_context()
+    entries = context.get("recent_diary_entries", [])
+    
+    if not entries:
+        return "No recent diary entries found. The user may not have made any diary entries yet."
+    
+    details = [f"Recent Diary Entries ({len(entries)} total):"]
+    
+    for i, entry in enumerate(entries, 1):
+        day = [f"\nDay {i}:"]
+        day.append(f"  Date: {entry.get('date', 'Unknown')}")
+        day.append(f"  Daily Craving Level: {entry.get('craving_range', 0)}/10")
+        
+        craving_count = entry.get("number_of_cravings", 0)
+        if craving_count > 0:
+            day.append(f"  Number of Cravings: {craving_count}")
+        
+        if entry.get("have_smoked"):
+            cigarettes = entry.get('number_of_cigarets_smoked', 0)
+            day.append(f"  Outcome: RELAPSED - smoked {cigarettes} cigarettes")
+        else:
+            day.append("  Outcome: Stayed smoke-free")
+        
+        if entry.get("notes"):
+            day.append(f"  Notes: {entry['notes']}")
+        
+        details.extend(day)
+    
+    return "\n".join(details)
+
+
+@tool  
+def get_user_progress() -> str:
+    """
+    Get the current user's overall progress including quit date, goals, and timeline.
+    
+    Returns:
+        Summary of the user's smoking cessation progress
+    """
+    context = user_context_tool.get_context()
+    
+    if not context:
+        return "No user progress data available. The user may need to set up their preferences."
+    
+    progress = ["User Progress Summary:"]
+    
+    if context.get("quit_date"):
+        progress.append(f"  Quit Date: {context['quit_date']}")
+    if context.get("days_since_quit"):
+        progress.append(f"  Days Smoke-Free: {context['days_since_quit']}")
+    if context.get("quit_reason"):
+        progress.append(f"  Quit Reason: {context['quit_reason']}")
+    
+    goals = context.get("goals", [])
+    if goals:
+        completed = [g['description'] for g in goals if g.get("is_completed")]
+        pending = [g['description'] for g in goals if not g.get("is_completed")]
+        
+        if completed:
+            progress.append(f"  Completed Goals: {', '.join(completed)}")
+        if pending:
+            progress.append(f"  Current Goals: {', '.join(pending)}")
+    
+    return "\n".join(progress)
+
 
 # Compile tools list with error handling
 TOOLS: List[BaseTool] = []
@@ -175,8 +300,10 @@ if search:
 
 TOOLS.extend([
     calculate_health_improvements,
-    get_craving_management_tips,
-    get_relapse_prevention_strategies,
+    search_smoking_cessation_research,
+    get_user_cravings,
+    get_user_diary,
+    get_user_progress,
 ])
 
 logger.info(f"Initialized {len(TOOLS)} tools for the agent")
