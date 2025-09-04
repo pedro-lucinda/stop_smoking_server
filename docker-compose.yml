@@ -16,23 +16,6 @@ services:
       - db
     restart: unless-stopped
 
-  scheduler:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: scheduler:latest
-    container_name: stop_smoking_scheduler
-    command: python -m app.tasks.run_scheduler
-    env_file:
-      - .env
-    environment:
-      - PYTHONPATH=/app
-    volumes:
-      - .:/app:cached
-    depends_on:
-      - db
-    restart: unless-stopped
-
   db:
     image: postgres:15
     container_name: db
