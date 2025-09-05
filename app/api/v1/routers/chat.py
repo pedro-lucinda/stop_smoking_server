@@ -20,6 +20,61 @@ from app.utils.ai import _event, _extract_text, _iter_tool_calls, _to_json, sse
 
 logger = logging.getLogger(__name__)
 
+# Pre-processing filter for non-smoking questions
+def _is_non_smoking_question(question: str) -> bool:
+    """Check if the question is clearly unrelated to smoking cessation."""
+    question_lower = question.lower().strip()
+    
+    # Smoking-related keywords that should be allowed
+    smoking_keywords = [
+        "smoke", "smoking", "cigarette", "cigarettes", "tobacco", "nicotine", 
+        "quit", "quitting", "cessation", "craving", "cravings", "withdrawal",
+        "relapse", "relapsed", "diary", "progress", "goal", "goals",
+        "health", "lung", "cancer", "heart", "breathing", "addiction",
+        "vape", "vaping", "e-cigarette", "hookah", "pipe", "cigar",
+        "secondhand", "passive", "smoke-free", "smokefree", "nonsmoker"
+    ]
+    
+    # Check if question contains any smoking-related keywords
+    has_smoking_keyword = any(keyword in question_lower for keyword in smoking_keywords)
+    
+    # If it has smoking keywords, it's likely related to smoking cessation
+    if has_smoking_keyword:
+        return False
+    
+    # Non-smoking question patterns that should be refused
+    non_smoking_patterns = [
+        # Geography and general knowledge
+        "capital of", "what country", "where is", "population of",
+        "who invented", "when was", "how to cook", "what is the weather",
+        "what is", "who is", "when did", "how many", "how much",
+        
+        # Technology and programming
+        "how to code", "programming", "python", "javascript", "html",
+        "computer", "software", "app", "website", "database",
+        
+        # Entertainment and media
+        "movie", "film", "actor", "actress", "song", "music", "book",
+        "game", "sport", "team", "player",
+        
+        # Science and education (non-health related)
+        "physics", "chemistry", "biology", "math", "history", "literature",
+        "philosophy", "economics", "politics", "law", "art", "design",
+        
+        # Personal advice (non-smoking related)
+        "relationship", "dating", "marriage", "divorce", "parenting",
+        "career", "job", "interview", "resume", "salary",
+        
+        # Health topics unrelated to smoking
+        "diet", "exercise", "weight loss", "fitness", "yoga", "meditation",
+        "sleep", "stress", "anxiety", "depression", "therapy"
+    ]
+    
+    # Check if question matches non-smoking patterns
+    matches_non_smoking = any(pattern in question_lower for pattern in non_smoking_patterns)
+    
+    return matches_non_smoking
+
 # Post-processing filter for non-smoking responses
 def _is_non_smoking_response(response_text: str, original_question: str) -> bool:
     """Check if the AI response answers a non-smoking question that should have been refused."""
@@ -223,7 +278,16 @@ async def chat_stream(
         try:
             # PRE-PROCESSING: Check for obvious non-smoking questions
             message_lower = payload.message.lower().strip()
-           
+            
+            # Check if this is a non-smoking question and refuse immediately
+            if _is_non_smoking_question(payload.message):
+                logger.info(f"Refusing non-smoking question: {payload.message[:100]}...")
+                refusal_response = _get_smoking_refusal_response()
+                
+                # Stream the refusal response as if it came from the AI
+                for word in refusal_response.split():
+                    yield _event(EVENT_TOKEN, text=word + " ")
+                return
             
             # Build structured initial state for the custom agent
             initial_state = {

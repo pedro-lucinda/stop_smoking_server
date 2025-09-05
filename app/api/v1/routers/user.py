@@ -3,6 +3,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import delete
 
 from app.api.v1.dependencies.auth0 import (
     can_update_email,
@@ -11,6 +12,11 @@ from app.api.v1.dependencies.auth0 import (
 )
 from app.api.v1.dependencies.db import get_async_db
 from app.models.user import User as UserModel
+from app.models.craving import Craving
+from app.models.diary import Diary
+from app.models.preference import Preference
+from app.models.motivation import DailyMotivation
+from app.models.user_badge import user_badges
 from app.schemas.user import UserOut, UserUpdate
 
 router = APIRouter()
@@ -85,3 +91,50 @@ async def update_current_user(
     await db.refresh(user)
 
     return user
+
+
+@router.delete("/me/reset", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_user_data(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_user),
+) -> None:
+    """
+    Reset all user data by deleting cravings, diary entries, preferences, 
+    daily motivations, and user badge associations.
+    This action cannot be undone.
+    """
+    try:
+        # Delete user's cravings
+        await db.execute(
+            delete(Craving).where(Craving.user_id == current_user.id)
+        )
+        
+        # Delete user's diary entries
+        await db.execute(
+            delete(Diary).where(Diary.user_id == current_user.id)
+        )
+        
+        # Delete user's daily motivations
+        await db.execute(
+            delete(DailyMotivation).where(DailyMotivation.user_id == current_user.id)
+        )
+        
+        # Delete user's preferences (this will cascade to goals due to the relationship)
+        await db.execute(
+            delete(Preference).where(Preference.user_id == current_user.id)
+        )
+        
+        # Delete user's badge associations
+        await db.execute(
+            delete(user_badges).where(user_badges.c.user_id == current_user.id)
+        )
+        
+        # Commit all deletions
+        await db.commit()
+        
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reset user data: {str(e)}"
+        ) from e

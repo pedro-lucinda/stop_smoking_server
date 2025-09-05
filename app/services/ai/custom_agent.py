@@ -16,7 +16,7 @@ from langgraph.prebuilt import ToolNode
 from langgraph.graph.message import add_messages
 
 from app.core.config import settings
-from app.prompts.chat import SYSTEM_POLICY
+from app.prompts.chat import SYSTEM_POLICY, DEVELOPER_POLICY, STRICT_REFUSAL_MSG, RESPONSE_TEMPLATES, TOOLS_SPEC
 
 logger = logging.getLogger(__name__)
 
@@ -326,17 +326,32 @@ def _build_user_context_section(context: Dict[str, Any]) -> str:
         return "\nUser Context: No preferences configured yet. The user should set up their quit date, smoking history, and goals for personalized advice."
 
 
+import json  # if you decide to serialize anything (not needed here)
+
 def _build_system_message(context: Dict[str, Any], tool_descriptions: List[str]) -> str:
     """Build the complete system message with context and tools."""
-    system_parts = [SYSTEM_POLICY]
-    
-    # Add user context section
-    system_parts.append(_build_user_context_section(context))
-    
-    # Add tool information
-    system_parts.append(f"\nAvailable Tools:\n" + "\n".join(f"- {desc}" for desc in tool_descriptions))
-    
-    return "\n".join(system_parts)
+    parts: List[str] = []
+
+    # Core policies belong in the system message
+    parts.append(SYSTEM_POLICY.strip())
+    parts.append(DEVELOPER_POLICY.strip())
+
+    # Keep the exact refusal text available to the model (string only)
+    parts.append(f"\nRefusal message (use verbatim when refusing):\n{STRICT_REFUSAL_MSG.strip()}")
+
+    # Optional: tool policy text if it's a STRING; safe to include
+    parts.append(TOOLS_SPEC.strip())
+
+    # User context section
+    parts.append(_build_user_context_section(context))
+
+    # Tool list visible to the model
+    if tool_descriptions:
+        parts.append("\nAvailable Tools:\n" + "\n".join(f"- {desc}" for desc in tool_descriptions))
+
+    # Only join strings
+    return "\n\n".join(p for p in parts if isinstance(p, str) and p.strip())
+
 
 
 def _prepare_model_messages(messages: List[BaseMessage], system_message: str) -> List[BaseMessage]:
