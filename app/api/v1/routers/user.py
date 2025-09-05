@@ -10,7 +10,7 @@ from app.api.v1.dependencies.auth0 import (
     get_current_user,
     update_user_email,
 )
-from app.api.v1.dependencies.db import get_async_db
+from app.api.v1.dependencies.async_db_session import get_async_db
 from app.models.user import User as UserModel
 from app.models.craving import Craving
 from app.models.diary import Diary

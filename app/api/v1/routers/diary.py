@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.dependencies.auth0 import get_current_user
-from app.api.v1.dependencies.db import get_async_db
+from app.api.v1.dependencies.async_db_session import get_async_db
 from app.models.diary import Diary
 from app.schemas.diary import DiaryIn, DiaryListOut, DiaryOut, DiaryUpdate
 

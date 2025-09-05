@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.v1.dependencies.auth0 import get_current_user
-from app.api.v1.dependencies.db import get_async_db
+from app.api.v1.dependencies.async_db_session import get_async_db
 from app.models.goal import Goal
 from app.models.motivation import DailyMotivation
 from app.models.preference import Preference

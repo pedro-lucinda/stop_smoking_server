@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, Text, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
-from app.db.base import Base, TimestampMixin
+from app.db_config.base import Base, TimestampMixin
 
 
 class Goal(TimestampMixin, Base):

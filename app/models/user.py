@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String
 from sqlalchemy.orm import relationship
 
-from app.db.base import Base
+from app.db_config.base import Base
 from app.models.badge import Badge
 from app.models.craving import Craving
 from app.models.diary import Diary

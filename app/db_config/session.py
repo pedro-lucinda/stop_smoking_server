@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
-from app.db.async_session import async_session
+from app.db_config.db_async_session import async_session
 
 # 1 Create the SQAlchemy Engine
 # pool_pre_ping=True ensures stale connections are recycled.

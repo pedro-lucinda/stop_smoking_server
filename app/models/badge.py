@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Text
 from sqlalchemy.orm import relationship
 
-from app.db.base import Base, TimestampMixin
+from app.db_config.base import Base, TimestampMixin
 from app.models.user_badge import user_badges
 
 

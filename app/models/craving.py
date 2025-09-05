@@ -1,7 +1,7 @@
 from sqlalchemy import Boolean, Column, Date, ForeignKey, Integer, Text
 from sqlalchemy.orm import relationship
 
-from app.db.base import Base, TimestampMixin
+from app.db_config.base import Base, TimestampMixin
 
 
 class Craving(TimestampMixin, Base):

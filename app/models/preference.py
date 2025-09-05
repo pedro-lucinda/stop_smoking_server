@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Date, ForeignKey, Integer, Text
 from sqlalchemy.orm import relationship
 
-from app.db.base import Base, TimestampMixin
+from app.db_config.base import Base, TimestampMixin
 from app.models.goal import Goal
 
 

@@ -8,7 +8,7 @@ from jose import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.dependencies.db import get_async_db
+from app.api.v1.dependencies.async_db_session import get_async_db
 from app.core.config import settings
 from app.models.user import User
 

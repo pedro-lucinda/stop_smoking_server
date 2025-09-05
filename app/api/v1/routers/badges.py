@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.v1.dependencies.auth0 import get_current_user, require_permission
-from app.api.v1.dependencies.db import get_async_db
+from app.api.v1.dependencies.async_db_session import get_async_db
 from app.models.badge import Badge
 from app.models.user import User
 from app.schemas.badges import (

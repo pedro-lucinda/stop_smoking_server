@@ -1,6 +1,6 @@
 from sqlalchemy import Column, ForeignKey, Integer, Table
 
-from app.db.base import Base
+from app.db_config.base import Base
 
 
 user_badges = Table(
